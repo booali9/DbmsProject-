@@ -22,13 +22,11 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // Routes
-app.use("/api/auth", authRoute); // Authentication routes (login, send OTP, reset password, etc.)
-app.use("/api/admin", adminRoute); // Admin-only routes (register user, edit user, etc.)
-app.use("/api/student", studentRoute); // Student-only routes (register course, view attendance, etc.)
-app.use("/api/teacher", teacherRoute); // Teacher-only routes (mark attendance, submit marks, etc.)
+app.use("/api/auth", authRoute); // Authentication routes
+app.use("/api/admin", adminRoute); // Admin-only routes
+app.use("/api/student", studentRoute); // Student-only routes
+app.use("/api/teacher", teacherRoute); // Teacher-only routes
 
-// Start the server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+// ✅ Export the Express app for Vercel
+module.exports = app;
+//
