@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const dotenv = require("dotenv");
 const connectDB = require("./utils/connect");
 const adminRoutes = require("./route/AdminRoute");
+const authRoute=require("./route/AuthRoute")
 
 // Load environment variables
 dotenv.config();
@@ -16,9 +17,10 @@ connectDB();
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
 app.use("/api/admin",adminRoutes)
+app.use("/api/user",authRoute)
 
 // Set port dynamically for hosting and local development
 const PORT = process.env.PORT || 5000;

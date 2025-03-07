@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const connectDB = async () => {
   try {
-    console.log("Attempting to connect to MongoDB with URL:", process.env.MONGO_URL);
+   
     await mongoose.connect(process.env.MONGO_URL, {
       serverSelectionTimeoutMS: 5000, // Timeout after 5s
     });
