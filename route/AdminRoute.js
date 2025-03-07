@@ -5,6 +5,6 @@ const { isAdmin } = require("../middleware/authMiddleware");
 const router = express.Router();
 
 // Register a new user
-router.post("/register", isAdmin, registerUser);
+router.post("/register", registerUser);
 
 module.exports = router;
