@@ -7,9 +7,9 @@ const generateToken = (userId, role) => {
   });
 };
 
-// Verify a token
-const verifyToken = (token) => {
-  return jwt.verify(token, process.env.JWT_SECRET);
-};
-
-module.exports = { generateToken, verifyToken };
+// Verify a token  
+const verifyToken = (token) => {  
+  return jwt.verify(token, process.env.JWT_SECRET);  
+};  
+  
+module.exports = { generateToken, verifyToken };        

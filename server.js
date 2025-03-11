@@ -10,14 +10,15 @@ const authRoute=require("./route/AuthRoute")
 dotenv.config();
 
 // Create an Express app
-const app = express();
-
-// Connect to MongoDB
+const app = express();  
+  
+// Connect to MongoDB   
 connectDB();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Middleware  
+app.use(cors());  
+app.use(express.json());  
+app.use(express.json());   
 
 app.use("/api/admin",adminRoutes)
 app.use("/api/user",authRoute)
@@ -30,4 +31,5 @@ app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
 
-module.exports = app;
+module.exports = app; 
+  
