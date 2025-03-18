@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const jwt=require("jsonwebtoken")
 
 // Middleware to check if the user is an admin
 const isAdmin = async (req, res, next) => {
@@ -21,4 +22,21 @@ const isAdmin = async (req, res, next) => {
   }
 };
 
-module.exports = { isAdmin };
+const authenticate =async (req, res, next) => {
+  const token = req.header("Authorization")?.replace("Bearer ", "");
+
+  if (!token) {
+    return res.status(401).json({ message: "No token, authorization denied" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET); // Replace with your secret key
+    req.user = decoded.user; // Attach the user to the request object
+    next();
+  } catch (error) {
+    res.status(401).json({ message: "Token is not valid" });
+  }
+};
+
+
+module.exports = { isAdmin,authenticate };

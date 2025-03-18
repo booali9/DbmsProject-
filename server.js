@@ -5,6 +5,8 @@ const dotenv = require("dotenv");
 const connectDB = require("./utils/connect");
 const adminRoutes = require("./route/AdminRoute");
 const authRoute=require("./route/AuthRoute")
+const StudentRoute=require("./route/StudentRoute")
+const TeacherRoute=require("./route/TeacherRoute")
 
 // Load environment variables
 dotenv.config();
@@ -22,6 +24,8 @@ app.use(express.json());
 
 app.use("/api/admin",adminRoutes)
 app.use("/api/user",authRoute)
+app.use("/api/student",StudentRoute)
+app.use("/api/teacher",TeacherRoute)
 
 // Set port dynamically for hosting and local development
 const PORT = process.env.PORT || 5000;
@@ -29,7 +33,7 @@ const PORT = process.env.PORT || 5000;
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
-});
+}); 
 
 module.exports = app; 
   
