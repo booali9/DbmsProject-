@@ -3,6 +3,8 @@ const Course = require('../models/Course'); // Adjust the path as necessary
 const Department = require('../models/Department')
 const Marks=require("../models/Mark")
 const Enrollment = require('../models/Enrollement');
+const EnrollmentPeriod=require('../models/Enrollmentperiod')
+const mongoose = require("mongoose");
 
 const bcrypt = require("bcryptjs");
 const { verifyToken } = require("../utils/token");
@@ -15,6 +17,7 @@ const registerUser = async (req, res) => {
   
     // Check if the requester is an admin
     const token = req.headers.authorization?.split(" ")[1];
+    console.log(token)
     if (!token) {
       return res.status(401).json({ message: "Access denied. No token provided." });
     }
@@ -187,6 +190,50 @@ const registerUser = async (req, res) => {
     }
   };
  
+  const editCourse = async (req, res) => {
+    try {
+      const { id } = req.params; // Get ID from request params
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: "Invalid course ID format" });
+      }
+  
+      const { courseName, department, semester, section } = req.body;
+  
+      // Find the course by ID
+      const course = await Course.findById(id);
+      if (!course) {
+        return res.status(404).json({ message: "Course not found" });
+      }
+  
+      // If department is updated, validate it
+      if (department) {
+        if (!mongoose.Types.ObjectId.isValid(department)) {
+          return res.status(400).json({ message: "Invalid department ID format" });
+        }
+  
+        const departmentExists = await Department.findById(department);
+        if (!departmentExists) {
+          return res.status(400).json({ message: "Department not found" });
+        }
+      }
+  
+      // Update course details
+      course.courseName = courseName || course.courseName;
+      course.department = department || course.department;
+      course.semester = semester || course.semester;
+      course.section = section || course.section;
+  
+      await course.save();
+      res.status(200).json({ message: "Course updated successfully", course });
+    } catch (error) {
+      console.error("Error updating course:", error.message);
+      res.status(500).json({ message: "Server error", error: error.message });
+    }
+  };
+  
+  // Route
+ 
+  
  
   const assignCourseToTeacher = async (req, res) => {
     const { course, teacher } = req.body;
@@ -226,27 +273,62 @@ const registerUser = async (req, res) => {
   
 
 
-const createDepartment = async (departmentData) => {
-  const { departmentName } = departmentData;
-
-  try {
-    // Check if the department already exists
-    const existingDepartment = await Department.findOne({ departmentName });
-    if (existingDepartment) {
-      throw new Error('Department already exists');
+  const createDepartment = async (req, res) => {
+    const { departmentName } = req.body;
+  
+    if (!departmentName) {
+      return res.status(400).json({ message: "Department name is required" });
     }
-
-    // Create the department
-    const newDepartment = new Department({
-      departmentName,
-    });
-
-    await newDepartment.save();
-    return newDepartment;
-  } catch (error) {
-    throw new Error(`Error creating department: ${error.message}`);
-  }
-};
+  
+    try {
+      // Check if the department already exists
+      const existingDepartment = await Department.findOne({ departmentName });
+      if (existingDepartment) {
+        return res.status(400).json({ message: "Department already exists" });
+      }
+  
+      // Create the department
+      const newDepartment = new Department({ departmentName });
+      await newDepartment.save();
+  
+      return res.status(201).json({ message: "Department created successfully", department: newDepartment });
+    } catch (error) {
+      console.error("Error creating department:", error.message);
+      return res.status(500).json({ message: "Server error", error: error.message });
+    }
+  };
+  
+  const editDepartment = async (req, res) => {
+    const { id } = req.params;
+    const { departmentName } = req.body;
+  
+    if (!departmentName) {
+      return res.status(400).json({ message: "Department name is required" });
+    }
+  
+    try {
+      // Check if department exists
+      const department = await Department.findById(id);
+      if (!department) {
+        return res.status(404).json({ message: "Department not found" });
+      }
+  
+      // Check if the new name is already taken
+      const existingDepartment = await Department.findOne({ departmentName });
+      if (existingDepartment && existingDepartment._id.toString() !== id) {
+        return res.status(400).json({ message: "Department name already exists" });
+      }
+  
+      // Update department
+      department.departmentName = departmentName;
+      await department.save();
+  
+      return res.status(200).json({ message: "Department updated successfully", department });
+    } catch (error) {
+      console.error("Error updating department:", error.message);
+      return res.status(500).json({ message: "Server error", error: error.message });
+    }
+  };
 
 const getAllStudentsMarks = async (req, res) => {
   try {
@@ -371,20 +453,76 @@ const approveEnrollment = async (req, res) => {
 };
 
 const startNewEnrollment = async (req, res) => {
-  const { department, semester } = req.body;
-  const adminId = req.user.id; // Admin ID from the token
+  const { department, semester, startDate, endDate } = req.body;
 
   try {
-      // Check if the user is an admin
-      if (req.user.role !== 'superadmin') {
-          return res.status(403).json({ message: 'Only admins can start new enrollment' });
-      }
+    // Ensure the user is a superadmin
+    if (!req.user || req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Only superadmins can start enrollment" });
+    }
 
-      // Start enrollment for the next semester
-      await startEnrollment({ body: { department, semester }, user: { id: adminId, role: 'superadmin' } }, res);
+    // Validate department
+    const departmentExists = await Department.findById(department);
+    if (!departmentExists) {
+      return res.status(400).json({ message: "Invalid department ID" });
+    }
+
+    // Check if an enrollment period is already open for this department & semester
+    const existingEnrollment = await EnrollmentPeriod.findOne({ department, semester, isOpen: true });
+    if (existingEnrollment) {
+      return res.status(400).json({ message: "Enrollment is already open for this department and semester" });
+    }
+
+    // Close previous enrollment if still open (optional)
+    await EnrollmentPeriod.updateMany({ department, isOpen: true }, { isOpen: false });
+
+    // Create a new enrollment period
+    const newEnrollmentPeriod = new EnrollmentPeriod({
+      department,
+      semester,
+      startDate: startDate || new Date(), // Default to now if not provided
+      endDate: endDate || null, // Optional, can be updated later
+      isOpen: true,
+    });
+
+    await newEnrollmentPeriod.save();
+
+    res.status(201).json({
+      message: "New enrollment period started successfully",
+      enrollmentPeriod: newEnrollmentPeriod,
+    });
+
   } catch (error) {
-      console.error('Error starting new enrollment:', error.message);
-      res.status(500).json({ message: 'Server error', error: error.message });
+    console.error("Error starting new enrollment:", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+const stopEnrollment = async (req, res) => {
+  const { department, semester } = req.body;
+
+  try {
+    // Ensure the user is a superadmin
+    if (!req.user || req.user.role !== "superadmin") {
+      return res.status(403).json({ message: "Only superadmins can stop enrollment" });
+    }
+
+    // Find the active enrollment period
+    const enrollmentPeriod = await EnrollmentPeriod.findOne({ department, semester, isOpen: true });
+
+    if (!enrollmentPeriod) {
+      return res.status(404).json({ message: "No active enrollment found for this department and semester" });
+    }
+
+    // Close enrollment
+    enrollmentPeriod.isOpen = false;
+    await enrollmentPeriod.save();
+
+    res.status(200).json({ message: "Enrollment period stopped successfully", enrollmentPeriod });
+
+  } catch (error) {
+    console.error("Error stopping enrollment:", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -426,6 +564,59 @@ const updateSemesterForPassedStudents = async (req, res) => {
       res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+const editAssignedCourse = async (req, res) => {
+  try {
+    const { id } = req.params; // Get assignment ID from URL
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid assignment ID format" });
+    }
+
+    const { course, teacher } = req.body;
+    const updatedBy = req.user.id; // Admin ID
+
+    // Find the assignment
+    const assignment = await CourseAssignment.findById(id);
+    if (!assignment) {
+      return res.status(404).json({ message: "Course assignment not found" });
+    }
+
+    // Check if the new course exists
+    if (course) {
+      if (!mongoose.Types.ObjectId.isValid(course)) {
+        return res.status(400).json({ message: "Invalid course ID format" });
+      }
+
+      const courseExists = await Course.findById(course);
+      if (!courseExists) {
+        return res.status(400).json({ message: "Course not found" });
+      }
+    }
+
+    // Check if the new teacher exists and is a teacher
+    if (teacher) {
+      if (!mongoose.Types.ObjectId.isValid(teacher)) {
+        return res.status(400).json({ message: "Invalid teacher ID format" });
+      }
+
+      const teacherUser = await User.findById(teacher);
+      if (!teacherUser || teacherUser.role !== "teacher") {
+        return res.status(400).json({ message: "Invalid teacher ID or not a teacher" });
+      }
+    }
+
+    // Update assignment details
+    assignment.course = course || assignment.course;
+    assignment.teacher = teacher || assignment.teacher;
+    assignment.updatedBy = updatedBy;
+
+    await assignment.save();
+    res.status(200).json({ message: "Course assignment updated successfully", assignment });
+  } catch (error) {
+    console.error("Error updating course assignment:", error.message);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
 
 
-module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents};
+
+module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment};

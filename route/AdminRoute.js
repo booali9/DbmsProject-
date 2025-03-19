@@ -11,7 +11,11 @@ const {
   editMarks,
   approveEnrollment,
   startNewEnrollment,
-  updateSemesterForPassedStudents
+  updateSemesterForPassedStudents,
+  editDepartment,
+  editCourse,
+  editAssignedCourse,
+  stopEnrollment
 } = require("../controllers/admincontroller");
 const { isAdmin } = require("../middleware/authMiddleware");
 const {authenticate} = require("../middleware/authMiddleware");
@@ -20,16 +24,25 @@ const router = express.Router();
 
 // Apply middleware and routes
 router.post("/register", authenticate, isAdmin, registerUser);
-router.post("/createcourse", authenticate, isAdmin, createCourse);
-router.post("/assign-course", authenticate, isAdmin, assignCourseToTeacher);
-router.post("/createdepartment", authenticate, isAdmin, createDepartment);
-router.post("/edituser/:userId", authenticate, isAdmin, editUser);
-router.post("/deleteuser/:userId", authenticate, isAdmin, deleteUser);
+router.delete("/deleteuser/:userId", authenticate, isAdmin, deleteUser);
 router.get("/getalluser", authenticate, isAdmin, getAllUsers);
+router.put("/edituser/:userId", authenticate, isAdmin, editUser);
+router.post("/createdepartment", authenticate, isAdmin, createDepartment);
+router.put("/editdepartment/:id", authenticate, isAdmin, editDepartment);
+router.post("/createcourse", authenticate, isAdmin, createCourse);
+router.put("/editcourse/:id", authenticate, isAdmin, editCourse);
+router.post("/assign-course", authenticate, isAdmin, assignCourseToTeacher);
+router.put("/editAssignedCourse/:id", authenticate, isAdmin, editAssignedCourse);
+router.post("/startenrollment", authenticate, isAdmin, startNewEnrollment);
+router.post("/stopenrollement", authenticate, isAdmin, stopEnrollment);
+
+
+
+
 router.get("/getallstudenTmarks", authenticate, isAdmin, getAllStudentsMarks);
 router.put("/editmark", authenticate, isAdmin, editMarks);
 router.post("/approveenrollement", authenticate, isAdmin, approveEnrollment);
-router.post("/startenrollment", authenticate, isAdmin, startNewEnrollment);
-router.post("/startenrollment", authenticate, isAdmin,updateSemesterForPassedStudents );
+
+router.post("/updatesemester", authenticate, isAdmin,updateSemesterForPassedStudents );
 
 module.exports = router;
