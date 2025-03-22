@@ -15,7 +15,10 @@ const {
   editDepartment,
   editCourse,
   editAssignedCourse,
-  stopEnrollment
+  stopEnrollment,
+  endSemester,
+  getAllAttendance,
+  getAllFeedback
 } = require("../controllers/admincontroller");
 const { isAdmin } = require("../middleware/authMiddleware");
 const {authenticate} = require("../middleware/authMiddleware");
@@ -40,9 +43,12 @@ router.post("/stopenrollement", authenticate, isAdmin, stopEnrollment);
 
 
 router.get("/getallstudenTmarks", authenticate, isAdmin, getAllStudentsMarks);
+router.get("/getallfedback", authenticate, isAdmin, getAllFeedback);
+router.get("/getallstudentattendance", authenticate, isAdmin, getAllAttendance);
 router.put("/editmark", authenticate, isAdmin, editMarks);
 router.post("/approveenrollement", authenticate, isAdmin, approveEnrollment);
 
 router.post("/updatesemester", authenticate, isAdmin,updateSemesterForPassedStudents );
+router.put("/endsemester", authenticate, isAdmin,endSemester );
 
 module.exports = router;

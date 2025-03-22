@@ -617,6 +617,96 @@ const editAssignedCourse = async (req, res) => {
   }
 };
 
+const endSemester = async (req, res) => {
+  const { department, semester } = req.body;
+  const adminId = req.user.id; // Admin ID from the token
+
+  try {
+      // Check if the user is an admin
+      if (req.user.role !== 'superadmin') {
+          return res.status(403).json({ message: 'Only admins can end semesters' });
+      }
+
+      // Close the enrollment period for the department and semester
+      await EnrollmentPeriod.updateMany({ department, semester, isOpen: true }, { isOpen: false });
+
+      // Update students' semester
+      await User.updateMany({ department, semester, role: { $in: ['undergrad', 'postgrad'] } }, { $inc: { semester: 1 } });
+
+      res.status(200).json({ message: 'Semester ended successfully' });
+  } catch (error) {
+      console.error('Error ending semester:', error.message);
+      res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+const getAllAttendance = async (req, res) => {
+  try {
+      // Check if the user is an admin
+      if (req.user.role !== 'superadmin') {
+          return res.status(403).json({ message: 'Only admins can fetch all attendance records' });
+      }
+
+      // Fetch all attendance records
+      const attendance = await Attendance.find()
+          .populate('student', 'name email')
+          .populate('course', 'courseName');
+
+      if (!attendance || attendance.length === 0) {
+          return res.status(404).json({ message: 'No attendance records found' });
+      }
+
+      // Format the response
+      const response = attendance.map(record => ({
+          studentName: record.student.name,
+          studentEmail: record.student.email,
+          courseName: record.course.courseName,
+          date: record.date,
+          status: record.status,
+      }));
+
+      res.status(200).json({ message: 'All attendance records fetched successfully', attendance: response });
+  } catch (error) {
+      console.error('Error fetching all attendance:', error.message);
+      res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+const getAllFeedback = async (req, res) => {
+  try {
+      // Check if the user is an admin
+      if (req.user.role !== 'superadmin') {
+          return res.status(403).json({ message: 'Only admins can fetch all feedback records' });
+      }
+
+      // Fetch all feedback records
+      const feedback = await Feedback.find()
+          .populate('student', 'name email')
+          .populate('teacher', 'name email')
+          .populate('course', 'courseName');
+
+      if (!feedback || feedback.length === 0) {
+          return res.status(404).json({ message: 'No feedback records found' });
+      }
+
+      // Format the response
+      const response = feedback.map(record => ({
+          studentName: record.student.name,
+          studentEmail: record.student.email,
+          teacherName: record.teacher.name,
+          teacherEmail: record.teacher.email,
+          courseName: record.course.courseName,
+          semester: record.semester,
+          feedback: record.feedback,
+          date: record.date,
+      }));
+
+      res.status(200).json({ message: 'All feedback records fetched successfully', feedback: response });
+  } catch (error) {
+      console.error('Error fetching all feedback:', error.message);
+      res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
 
 
-module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment};
+module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback};
