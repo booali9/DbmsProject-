@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     required: true,
-    enum: ["superadmin", "undergrad", "postgrad", "teacher", "canteen"],
+    enum: ["superadmin", "undergrad", "postgrad", "teacher", "canteen","point"],
   },
   department: { type: String }, // Only for students and teachers
   year: { type: Number }, // Only for students

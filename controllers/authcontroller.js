@@ -97,7 +97,7 @@ const resendOTP = async (req, res) => {
 };
 
 // Login Function
-const loginUser = async (req, res) => {
+const loginWithRole = async (req, res, allowedRoles) => {
   const { email, password } = req.body;
   console.log("Login Attempt with:", email, password);
 
@@ -107,6 +107,11 @@ const loginUser = async (req, res) => {
 
     if (!user) {
       return res.status(400).json({ message: "Invalid email or password" });
+    }
+
+    // Check if user's role is allowed for this endpoint
+    if (!allowedRoles.includes(user.role)) {
+      return res.status(403).json({ message: "Access denied for this login endpoint" });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -122,6 +127,23 @@ const loginUser = async (req, res) => {
     console.error("Error logging in:", err.message);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+// Specific login controllers for each role
+
+const loginUndergrad = async (req, res) => {
+  await loginWithRole(req, res, ["undergrad"]);
+};
+
+const loginPostgrad = async (req, res) => {
+  await loginWithRole(req, res, ["postgrad"]);
+};
+
+
+
+// For other roles or general login (if needed)
+const loginOther = async (req, res) => {
+  await loginWithRole(req, res, ["teacher", "canteen", "point","superadmin"]); // Add any other roles you want to allow here
 };
 
 // Reset Password Function
@@ -155,4 +177,6 @@ const resetPassword = async (req, res) => {
   }
 };
 
-module.exports = { loginUser, forgotPassword, resetPassword, resendOTP };
+module.exports = { 
+  loginUndergrad,
+  loginPostgrad,loginOther, forgotPassword, resetPassword, resendOTP };
