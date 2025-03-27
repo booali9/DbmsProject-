@@ -18,7 +18,9 @@ const {
   stopEnrollment,
   endSemester,
   getAllAttendance,
-  getAllFeedback
+  getAllFeedback,
+  getAllCourses,
+  getAllDepartments
 } = require("../controllers/admincontroller");
 const { isAdmin } = require("../middleware/authMiddleware");
 const {authenticate} = require("../middleware/authMiddleware");
@@ -38,6 +40,8 @@ router.post("/assign-course", authenticate, isAdmin, assignCourseToTeacher);
 router.put("/editAssignedCourse/:id", authenticate, isAdmin, editAssignedCourse);
 router.post("/startenrollment", authenticate, isAdmin, startNewEnrollment);
 router.post("/stopenrollement", authenticate, isAdmin, stopEnrollment);
+router.get("/courses", authenticate, isAdmin,getAllCourses);
+router.get("/departments", authenticate, isAdmin, getAllDepartments);
 
 
 

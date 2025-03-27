@@ -275,7 +275,7 @@ const registerUser = async (req, res) => {
 
   const createDepartment = async (req, res) => {
     const { departmentName } = req.body;
-  
+  console.log(departmentName)
     if (!departmentName) {
       return res.status(400).json({ message: "Department name is required" });
     }
@@ -708,5 +708,107 @@ const getAllFeedback = async (req, res) => {
   }
 };
 
+const getAllDepartments = async (req, res) => {
+  try {
+    const departments = await Department.find();
+    
+    // Properly send HTTP response
+    res.status(200).json({
+      success: true,
+      count: departments.length,
+      data: departments
+    });
+  } catch (error) {
+    console.error("Error fetching departments:", error.message);
+    
+    // Proper error response
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message
+    });
+  }
+};
 
-module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback};
+// Get single department by ID
+const getDepartmentById = async (req, res) => {
+  try {
+    const department = await Department.findById(req.params.id);
+    
+    if (!department) {
+      return res.status(404).json({
+        success: false,
+        message: "Department not found"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: department
+    });
+  } catch (error) {
+    console.error("Error fetching department:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message
+    });
+  }
+};
+
+const getAllCourses = async (req, res) => {
+  try {
+    const courses = await Course.find()
+      .populate('department', 'departmentName')
+      .populate('teacher', 'name email')
+      .populate('enrolledStudents', 'name email')
+      .sort({ courseName: 1 });
+
+    res.status(200).json({
+      success: true,
+      count: courses.length,
+      data: courses
+    });
+  } catch (error) {
+    console.error("Error fetching courses:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message
+    });
+  }
+};
+
+// Get single course by ID
+const getCourseById = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id)
+      .populate('department', 'departmentName')
+      .populate('teacher', 'name email')
+      .populate('enrolledStudents', 'name email');
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: "Course not found"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: course
+    });
+  } catch (error) {
+    console.error("Error fetching course:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message
+    });
+  }
+};
+
+
+
+
+module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback,getAllDepartments,getAllCourses}; 
