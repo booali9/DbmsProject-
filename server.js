@@ -9,6 +9,7 @@ const adminRoutes = require("./route/AdminRoute");
 const authRoute = require("./route/AuthRoute");
 const StudentRoute = require("./route/StudentRoute");
 const TeacherRoute = require("./route/TeacherRoute");
+const CanteenRoute = require("./route/CanteenRoute");
 
 // Load environment variables
 dotenv.config();
@@ -39,6 +40,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/user", authRoute);
 app.use("/api/student", StudentRoute);
 app.use("/api/teacher", TeacherRoute);
+app.use("/api/canteen", CanteenRoute);
 
 // Store user locations in memory
 const userLocations = new Map();

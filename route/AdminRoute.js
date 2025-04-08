@@ -20,10 +20,13 @@ const {
   getAllAttendance,
   getAllFeedback,
   getAllCourses,
-  getAllDepartments
+  getAllDepartments,
+  getActiveEnrollments,
+  getEnrollmentStudents
 } = require("../controllers/admincontroller");
 const { isAdmin } = require("../middleware/authMiddleware");
 const {authenticate} = require("../middleware/authMiddleware");
+const { getCoursesForStudent } = require("../controllers/studentController");
 
 const router = express.Router();
 
@@ -42,6 +45,8 @@ router.post("/startenrollment", authenticate, isAdmin, startNewEnrollment);
 router.post("/stopenrollement", authenticate, isAdmin, stopEnrollment);
 router.get("/courses", authenticate, isAdmin,getAllCourses);
 router.get("/departments", authenticate, isAdmin, getAllDepartments);
+router.get("/active-enrollments", authenticate, isAdmin,getActiveEnrollments);
+router.get("/getenrollementstudent", authenticate, isAdmin, getEnrollmentStudents);
 
 
 

@@ -443,7 +443,7 @@ const approveEnrollment = async (req, res) => {
       if (!course.enrolledStudents.includes(enrollment.student)) {
           course.enrolledStudents.push(enrollment.student);
           await course.save();
-      }
+      } 
 
       res.status(200).json({ message: 'Enrollment approved successfully', enrollment });
   } catch (error) {
@@ -808,7 +808,63 @@ const getCourseById = async (req, res) => {
   }
 };
 
+const getActiveEnrollments = async (req, res) => {
+  try {
+    const activePeriods = await EnrollmentPeriod.find({ isOpen: true })
+      .populate('department', 'departmentName')
+      .sort({ startDate: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: activePeriods.length,
+      data: activePeriods
+    });
+  } catch (error) {
+    console.error('Error fetching active enrollments:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Get students in active enrollment period
+const getEnrollmentStudents = async (req, res) => {
+  try {
+    const period = await EnrollmentPeriod.findById(req.params.periodId);
+    if (!period) {
+      return res.status(404).json({
+        success: false,
+        message: 'Enrollment period not found'
+      });
+    }
+
+    const enrollments = await Enrollment.find({
+      department: period.department,
+      semester: period.semester,
+      isOpen: true
+    })
+    .populate('student', 'name email')
+    .populate('course', 'courseName')
+    .populate('department', 'departmentName');
+
+    res.status(200).json({
+      success: true,
+      count: enrollments.length,
+      data: enrollments
+    });
+  } catch (error) {
+    console.error('Error fetching enrollment students:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
 
 
 
-module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback,getAllDepartments,getAllCourses}; 
+
+module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback,getAllDepartments,getAllCourses,getActiveEnrollments,getEnrollmentStudents}; 
