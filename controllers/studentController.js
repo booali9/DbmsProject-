@@ -49,7 +49,7 @@ const enrollStudentInCourse = async (req, res) => {
                 isApproved: false, // Admin must approve it
                 isOpen: true, // Track active enrollments
             });
-
+ 
             await newEnrollment.save();
             enrolledCourses.push(newEnrollment);
         }
@@ -62,7 +62,108 @@ const enrollStudentInCourse = async (req, res) => {
     }
 };
 
-
+// Student enrolls in courses
+const enrollInCourses = async (req, res) => {
+    const { courseIds } = req.body;
+    const studentId = req.user.id;
+  
+    try {
+      // Get student info
+      const student = await User.findById(studentId);
+      if (!student) {
+        return res.status(404).json({ message: 'Student not found' });
+      }
+  
+      // Check if enrollment period is open
+      const enrollmentPeriod = await EnrollmentPeriod.findOne({ 
+        department: student.department,
+        isOpen: true
+      });
+      
+      if (!enrollmentPeriod) {
+        return res.status(400).json({ message: 'No active enrollment period for your department' });
+      }
+  
+      // Check if current date is before end date
+      if (new Date() > enrollmentPeriod.endDate) {
+        return res.status(400).json({ message: 'Enrollment period has ended' });
+      }
+  
+      // Check number of courses
+      if (courseIds.length > enrollmentPeriod.maxCourses) {
+        return res.status(400).json({ 
+          message: `You cannot enroll in more than ${enrollmentPeriod.maxCourses} courses` 
+        });
+      }
+  
+      // Check failed courses from previous semesters
+      const failedCourses = await Marks.find({
+        student: studentId,
+        marksObtained: { $lt: 50 } // Assuming passing mark is 50
+      }).populate('course');
+  
+      // Get current semester courses
+      const currentSemesterCourses = await Course.find({
+        department: student.department,
+        semester: student.semester
+      });
+  
+      // Combine current semester courses with failed courses
+      const availableCourses = [...currentSemesterCourses];
+      failedCourses.forEach(failed => {
+        if (!availableCourses.some(c => c._id.equals(failed.course._id))) {
+          availableCourses.push(failed.course);
+        }
+      });
+  
+      // Validate each course
+      const enrollments = [];
+      for (const courseId of courseIds) {
+        const course = availableCourses.find(c => c._id.equals(courseId));
+        if (!course) {
+          return res.status(400).json({ 
+            message: `Course ${courseId} is not available for enrollment` 
+          });
+        }
+  
+        // Check if already enrolled
+        const existingEnrollment = await Enrollment.findOne({
+          student: studentId,
+          course: courseId,
+          isOpen: true
+        });
+        
+        if (existingEnrollment) {
+          return res.status(400).json({ 
+            message: `You are already enrolled in course ${course.courseName}` 
+          });
+        }
+  
+        // Create enrollment
+        const newEnrollment = new Enrollment({
+          student: studentId,
+          course: courseId,
+          semester: course.semester,
+          department: student.department,
+          enrollmentDate: new Date(),
+          isApproved: false,
+          isOpen: true
+        });
+  
+        await newEnrollment.save();
+        enrollments.push(newEnrollment);
+      }
+  
+      res.status(201).json({ 
+        message: 'Enrollment successful', 
+        enrollments,
+        failedCourses: failedCourses.map(f => f.course.courseName)
+      });
+    } catch (error) {
+      console.error('Error enrolling in courses:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  };
   const getStudentMarks = async (req, res) => {
     const studentId = req.user.id; // Assuming the student's ID is available in the token
 
@@ -98,39 +199,7 @@ const enrollStudentInCourse = async (req, res) => {
 };
 
 
-const enrollInCourse = async (req, res) => {
-    const { courseId } = req.body;
-    const studentId = req.user.id; // Student ID from the token
 
-    try {
-        // Check if the course exists
-        const course = await Course.findById(courseId);
-        if (!course) {
-            return res.status(404).json({ message: 'Course not found' });
-        }
-
-        // Check if the student is already enrolled in the course
-        const existingEnrollment = await Enrollment.findOne({ student: studentId, course: courseId });
-        if (existingEnrollment) {
-            return res.status(400).json({ message: 'Student is already enrolled in this course' });
-        }
-
-        // Create a new enrollment record
-        const newEnrollment = new Enrollment({
-            student: studentId,
-            course: courseId,
-            semester: course.semester,
-            enrollmentDate: new Date(),
-            isApproved: false, // Initially not approved
-        });
-
-        await newEnrollment.save();
-        res.status(201).json({ message: 'Enrollment request submitted successfully', enrollment: newEnrollment });
-    } catch (error) {
-        console.error('Error enrolling in course:', error.message);
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-};
 
 const getCoursesForStudent = async (req, res) => {
     const studentId = req.user.id; // Student ID from the token
@@ -249,6 +318,62 @@ const submitFeedback = async (req, res) => {
     }
 };
 
+const getAvailableCourses = async (req, res) => {
+    const studentId = req.user.id;
+  
+    try {
+      const student = await User.findById(studentId);
+      if (!student) {
+        return res.status(404).json({ message: 'Student not found' });
+      }
+  
+      // Check if enrollment period is open
+      const enrollmentPeriod = await EnrollmentPeriod.findOne({ 
+        department: student.department,
+        isOpen: true
+      });
+      
+      if (!enrollmentPeriod) {
+        return res.status(200).json({ 
+          message: 'No active enrollment period', 
+          courses: [],
+          isEnrollmentOpen: false
+        });
+      }
+  
+      // Get failed courses
+      const failedCourses = await Marks.find({
+        student: studentId,
+        marksObtained: { $lt: 50 }
+      }).populate('course');
+  
+      // Get current semester courses
+      const currentSemesterCourses = await Course.find({
+        department: student.department,
+        semester: student.semester
+      });
+  
+      // Combine and remove duplicates
+      const availableCourses = [...currentSemesterCourses];
+      failedCourses.forEach(failed => {
+        if (!availableCourses.some(c => c._id.equals(failed.course._id))) {
+          availableCourses.push(failed.course);
+        }
+      });
+  
+      res.status(200).json({ 
+        message: 'Available courses fetched',
+        courses: availableCourses,
+        isEnrollmentOpen: true,
+        maxCourses: enrollmentPeriod.maxCourses
+      });
+    } catch (error) {
+      console.error('Error fetching available courses:', error);
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  };
+  
 
 
-  module.exports={enrollStudentInCourse,getStudentMarks,enrollInCourse,getCoursesForStudent,getCoursesForStudent,getAllEnrollmentsForAdmin,getStudentAttendance,submitFeedback}
+
+  module.exports={enrollStudentInCourse,getStudentMarks,getCoursesForStudent,getCoursesForStudent,getAllEnrollmentsForAdmin,getStudentAttendance,submitFeedback,enrollInCourses,getAvailableCourses}

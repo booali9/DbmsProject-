@@ -83,7 +83,7 @@ exports.updateMenuItem = async (req, res) => {
   try {
     const { itemId } = req.params;
     const { item, price } = req.body;
-    const userId = req.user._id;
+    const userId = req.user.id;
 
     // Validate input
     if (!item || price === undefined) {
@@ -101,8 +101,8 @@ exports.updateMenuItem = async (req, res) => {
       });
     }
 
-    // Find the specific menu item by its _id
-    const menuItem = canteen.menu.id(itemId);
+    // Find the menu item
+    const menuItem = canteen.menu.find(item => item._id.toString() === itemId);
     if (!menuItem) {
       return res.status(404).json({
         success: false,
@@ -132,13 +132,14 @@ exports.updateMenuItem = async (req, res) => {
   }
 };
 
-// Delete a specific menu item
+// Delete a specific menu item 
 exports.deleteMenuItem = async (req, res) => {
   try {
-    const { itemId } = req.params;
-    const userId = req.user._id;
+    const { itemId } = req.params; 
+    const userId = req.user.id; 
 
     const canteen = await Canteen.findOne({ submittedBy: userId });
+    console.log(userId)
     if (!canteen) {
       return res.status(404).json({
         success: false,
@@ -146,8 +147,18 @@ exports.deleteMenuItem = async (req, res) => {
       });
     }
 
-    // Remove the item by filtering on _id
-    canteen.menu = canteen.menu.filter(item => item._id.toString() !== itemId);
+    // Find the index of the item to remove
+    const itemIndex = canteen.menu.findIndex(item => item._id.toString() === itemId);
+    
+    if (itemIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Menu item not found'
+      });
+    }
+
+    // Remove the item
+    canteen.menu.splice(itemIndex, 1);
     canteen.updatedAt = new Date();
     
     await canteen.save();
@@ -224,7 +235,8 @@ exports.getMenu = async (req, res) => {
 // Upload Bill
 exports.uploadBill = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.
+    id;
     const { file } = req; // Assuming you're using multer for file uploads
 
     // Check if user is a canteen owner
@@ -268,24 +280,26 @@ exports.uploadBill = async (req, res) => {
 };
 
 // Get All Canteen Data (for admin)
+// Get Only Bills (for admin)
 exports.getAllCanteenData = async (req, res) => {
   try {
-    // Check if user is admin
     if (req.user.role !== 'superadmin') {
-      return res.status(403).json({ success: false, message: 'Only admins can view all canteen data' });
+      return res.status(403).json({
+        success: false,
+        message: 'Only admins can view all canteen bills'
+      });
     }
 
-    const canteens = await Canteen.find()
-      .populate('submittedBy', 'name email')
+    const bills = await Canteen.find({}, { bill: 1 }) // Only select 'bill' and default '_id'
       .sort({ submissionDate: -1 });
 
     res.status(200).json({
       success: true,
-      count: canteens.length,
-      data: canteens
+      count: bills.length,
+      bills: bills // you can also use `data: bills` if your frontend expects it
     });
   } catch (error) {
-    console.error('Error fetching canteen data:', error);
+    console.error('Error fetching canteen bills:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -297,10 +311,7 @@ exports.getAllCanteenData = async (req, res) => {
 exports.getAllMenus = async (req, res) => {
   try {
     // Check if user is admin
-    if (req.user.role !== 'superadmin') {
-      return res.status(403).json({ success: false, message: 'Only admins can view all menus' });
-    }
-
+  
     const canteens = await Canteen.find({})
       .populate('submittedBy', 'name email canteenName')
       .select('menu canteenName updatedAt')
@@ -319,6 +330,85 @@ exports.getAllMenus = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching all menus:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Delete bill
+exports.deleteBill = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const canteen = await Canteen.findOne({ submittedBy: userId });
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: 'Canteen not found'
+      });
+    }
+
+    if (!canteen.bill) {
+      return res.status(404).json({
+        success: false,
+        message: 'No bill to delete'
+      });
+    }
+
+    canteen.bill = undefined;
+    await canteen.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Bill deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting bill:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Get all bills uploaded by the canteen owner
+exports.getBills = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Check if user is a canteen owner
+    const user = await User.findById(userId);
+    if (user.role !== 'canteen') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Only canteen owners can view bills' 
+      });
+    }
+
+    const canteen = await Canteen.findOne({ submittedBy: userId })
+      .select('bill updatedAt')
+      .sort({ updatedAt: -1 });
+
+    if (!canteen || !canteen.bill) {
+      return res.status(404).json({
+        success: false,
+        message: 'No bills found for this canteen'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        billUrl: canteen.bill,
+        lastUpdated: canteen.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching bills:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',

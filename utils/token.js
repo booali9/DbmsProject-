@@ -11,5 +11,5 @@ const generateToken = (userId, role) => {
 const verifyToken = (token) => {  
   return jwt.verify(token, process.env.JWT_SECRET);  
 };    
-       
+         
 module.exports = { generateToken, verifyToken };         
