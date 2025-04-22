@@ -235,41 +235,6 @@ const registerUser = async (req, res) => {
  
   
  
-  const assignCourseToTeacher = async (req, res) => {
-    const { course, teacher } = req.body;
-    const assignedBy = req.user.id; // Admin ID from the token
-  
-    try {
-      // Check if the course exists
-      const courseExists = await Course.findById(course);
-      if (!courseExists) {
-        return res.status(400).json({ message: 'Invalid course ID' });
-      }
-  
-      // Check if the teacher exists and is a teacher
-      const teacherUser = await User.findById(teacher);
-      if (!teacherUser || teacherUser.role !== 'teacher') {
-        return res.status(400).json({ message: 'Invalid teacher ID or not a teacher' });
-      }
-  
-      // Assign the course to the teacher
-      courseExists.teacher = teacher;
-      await courseExists.save();
-  
-      // Create a course assignment record
-      const newAssignment = new CourseAssignment({
-        course,
-        teacher,
-        assignedBy,
-      });
-  
-      await newAssignment.save();
-      res.status(201).json({ message: 'Course assigned to teacher successfully', assignment: newAssignment });
-    } catch (error) {
-      console.error('Error assigning course:', error.message);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
-  };
   
 
 
@@ -564,56 +529,110 @@ const updateSemesterForPassedStudents = async (req, res) => {
       res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
+// In your backend controller
+// In your backend controller
+const assignCourseToTeacher = async (req, res) => {
+  try {
+    const { courseId, teacher } = req.body;
+    const assignedBy = req.user._id; // Get admin ID from auth middleware
+
+    if (!courseId || !teacher) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Course ID and teacher ID are required" 
+      });
+    }
+
+    // Check if course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Course not found" 
+      });
+    }
+
+    // Check if teacher exists and is a teacher
+    const teacherUser = await User.findById(teacher);
+    if (!teacherUser || teacherUser.role !== 'teacher') {
+      return res.status(400).json({ 
+        success: false,
+        message: "Invalid teacher ID or user is not a teacher" 
+      });
+    }
+
+    // Update course with teacher
+    course.teacher = teacher;
+    await course.save();
+
+    // Create or update assignment record
+    let assignment = await CourseAssignment.findOneAndUpdate(
+      { course: courseId },
+      { teacher, assignedBy },
+      { new: true, upsert: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Teacher assigned successfully',
+      data: assignment
+    });
+  } catch (error) {
+    console.error('Assignment error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+      error: error.errors
+    });
+  }
+};
+
 const editAssignedCourse = async (req, res) => {
   try {
-    const { id } = req.params; // Get assignment ID from URL
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid assignment ID format" });
+    const { id: courseId } = req.params;
+    const { teacher } = req.body;
+    const assignedBy = req.user._id;
+
+    if (!courseId || !teacher) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Course ID and teacher ID are required" 
+      });
     }
 
-    const { course, teacher } = req.body;
-    const updatedBy = req.user.id; // Admin ID
+    // Update course
+    const updatedCourse = await Course.findByIdAndUpdate(
+      courseId,
+      { teacher },
+      { new: true }
+    );
 
-    // Find the assignment
-    const assignment = await CourseAssignment.findById(id);
-    if (!assignment) {
-      return res.status(404).json({ message: "Course assignment not found" });
+    if (!updatedCourse) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Course not found" 
+      });
     }
 
-    // Check if the new course exists
-    if (course) {
-      if (!mongoose.Types.ObjectId.isValid(course)) {
-        return res.status(400).json({ message: "Invalid course ID format" });
-      }
+    // Update assignment record
+    const assignment = await CourseAssignment.findOneAndUpdate(
+      { course: courseId },
+      { teacher, assignedBy },
+      { new: true }
+    );
 
-      const courseExists = await Course.findById(course);
-      if (!courseExists) {
-        return res.status(400).json({ message: "Course not found" });
-      }
-    }
-
-    // Check if the new teacher exists and is a teacher
-    if (teacher) {
-      if (!mongoose.Types.ObjectId.isValid(teacher)) {
-        return res.status(400).json({ message: "Invalid teacher ID format" });
-      }
-
-      const teacherUser = await User.findById(teacher);
-      if (!teacherUser || teacherUser.role !== "teacher") {
-        return res.status(400).json({ message: "Invalid teacher ID or not a teacher" });
-      }
-    }
-
-    // Update assignment details
-    assignment.course = course || assignment.course;
-    assignment.teacher = teacher || assignment.teacher;
-    assignment.updatedBy = updatedBy;
-
-    await assignment.save();
-    res.status(200).json({ message: "Course assignment updated successfully", assignment });
+    res.status(200).json({
+      success: true,
+      message: 'Assignment updated successfully',
+      data: assignment
+    });
   } catch (error) {
-    console.error("Error updating course assignment:", error.message);
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error('Edit assignment error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+      error: error.errors
+    });
   }
 };
 
@@ -864,7 +883,49 @@ const getEnrollmentStudents = async (req, res) => {
   }
 };
 
+const getAllStudentAttendance = async (req, res) => {
+  try {
+    const { courseId, date, studentId } = req.query;
+    const filter = {};
+    
+    if (courseId) filter.course = courseId;
+    if (date) filter.date = date;
+    if (studentId) filter.student = studentId;
+
+    const attendance = await Attendance.find(filter)
+      .populate('student', 'name email')
+      .populate('course', 'courseName')
+      .sort({ date: -1 });
+    
+    res.status(200).json({ attendance });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get all student marks
+const getAllStudentMarks = async (req, res) => {
+  try {
+    const { courseId, semester, studentId } = req.query;
+    const filter = {};
+    
+    if (courseId) filter.course = courseId;
+    if (semester) filter.semester = semester;
+    if (studentId) filter.student = studentId;
+
+    const marks = await Marks.find(filter)
+      .populate('student', 'name email')
+      .populate('course', 'courseName')
+      .sort({ semester: 1 });
+    
+    res.status(200).json({ marks });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
 
 
 
-module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback,getAllDepartments,getAllCourses,getActiveEnrollments,getEnrollmentStudents}; 
+
+module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback,getAllDepartments,getAllCourses,getActiveEnrollments,getEnrollmentStudents, getAllStudentAttendance,
+  getAllStudentMarks}; 

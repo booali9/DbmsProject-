@@ -1,121 +1,158 @@
-const Enrollment = require('../models/Enrollement'); // Adjust the path as necessary
-const Course = require('../models/Course'); 
-const User = require('../models/User');
-const Marks = require('../models/Mark'); // Import the Marks model
+const Course = require('../models/Course');
+const Attendance = require('../models/Attendance');
+const Marks = require('../models/Mark');
 
-const assignMarksToStudent = async (req, res) => {
-    const { enrollmentId, marksObtained, totalMarks, semester } = req.body;
-    const teacherId = req.user.id; // Teacher ID from the token
-  
-    try {
-      // Check if the enrollment exists
-      const enrollmentExists = await Enrollment.findById(enrollmentId).populate('course');
-      if (!enrollmentExists) {
-        return res.status(400).json({ message: 'Invalid enrollment ID' });
-      }
-  
-      // Check if the teacher is assigned to the course
-      const course = await Course.findById(enrollmentExists.course._id);
-      if (!course || course.teacher.toString() !== teacherId.toString()) {
-        return res.status(403).json({ message: 'You are not assigned to this course' });
-      }
-  
-      // Create a new Marks entry
-      const newMarks = new Marks({
-        student: enrollmentExists.student,
-        course: enrollmentExists.course._id,
-        semester: semester,
-        marksObtained: marksObtained,
-        totalMarks: totalMarks
-      });
-  
-      // Save the marks to the database
-      await newMarks.save();
-  
-      res.status(200).json({ message: 'Marks assigned successfully', marks: newMarks });
-    } catch (error) {
-      console.error('Error assigning marks:', error.message);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
+// Get courses assigned to teacher
+const getAssignedCourses = async (req, res) => {
+  try {
+    const courses = await Course.find({ teacher: req.user.id })
+      .populate('department', 'departmentName')
+      .select('courseName department semester section');
+    
+    res.status(200).json({ courses });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 };
+
+// Mark attendance for a course (updated from your existing code)
 const markAttendance = async (req, res) => {
-  const { courseId, date, students } = req.body; // students: [{ studentId, status }]
-  const teacherId = req.user.id; // Teacher ID from the token
-
+  const { courseId, date, students } = req.body;
+  
   try {
-      // Check if the course exists and is assigned to the teacher
-      const course = await Course.findById(courseId);
-      if (!course || course.teacher.toString() !== teacherId) {
-          return res.status(403).json({ message: 'You are not assigned to this course' });
-      }
+    // Check if course is assigned to teacher
+    const course = await Course.findOne({ 
+      _id: courseId, 
+      teacher: req.user.id 
+    });
+    
+    if (!course) {
+      return res.status(403).json({ message: 'Not authorized for this course' });
+    }
 
-      // Validate each student
-      for (const student of students) {
-          const studentExists = await User.findById(student.studentId);
-          if (!studentExists || !['undergrad', 'postgrad'].includes(studentExists.role)) {
-              return res.status(400).json({ message: `Invalid student ID: ${student.studentId}` });
-          }
+    // Process attendance records
+    const attendanceRecords = await Promise.all(
+      students.map(async student => {
+        // Check enrollment
+        const isEnrolled = await Enrollment.exists({
+          student: student.studentId,
+          course: courseId
+        });
+        
+        if (!isEnrolled) {
+          throw new Error(`Student ${student.studentId} not enrolled`);
+        }
 
-          // Check if the student is enrolled in the course
-          const isEnrolled = await Enrollment.findOne({ student: student.studentId, course: courseId });
-          if (!isEnrolled) {
-              return res.status(400).json({ message: `Student ${student.studentId} is not enrolled in this course` });
-          }
-      }
+        // Create or update attendance
+        return Attendance.findOneAndUpdate(
+          { student: student.studentId, course: courseId, date },
+          { status: student.status },
+          { upsert: true, new: true }
+        ).populate('student', 'name');
+      })
+    );
 
-      // Save attendance for each student
-      const attendanceRecords = [];
-      for (const student of students) {
-          const newAttendance = new Attendance({
-              student: student.studentId,
-              course: courseId,
-              date,
-              status: student.status,
-          });
-          await newAttendance.save();
-          attendanceRecords.push(newAttendance);
-      }
-
-      res.status(201).json({ message: 'Attendance marked successfully', attendance: attendanceRecords });
+    res.status(200).json({ 
+      message: 'Attendance marked successfully',
+      attendance: attendanceRecords
+    });
   } catch (error) {
-      console.error('Error marking attendance:', error.message);
-      res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
-const getTeacherCourseAttendance = async (req, res) => {
-  const teacherId = req.user.id; // Teacher ID from the token
-
+// Get attendance for a specific course
+const getCourseAttendance = async (req, res) => {
   try {
-      // Fetch all courses assigned to the teacher
-      const courses = await Course.find({ teacher: teacherId }).select('_id courseName');
+    const { courseId } = req.params;
+    
+    // Verify teacher is assigned to course
+    const isAssigned = await Course.exists({
+      _id: courseId,
+      teacher: req.user.id
+    });
+    
+    if (!isAssigned) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
 
-      if (!courses || courses.length === 0) {
-          return res.status(404).json({ message: 'No courses found for this teacher' });
-      }
+    const attendance = await Attendance.find({ course: courseId })
+      .populate('student', 'name email')
+      .sort({ date: -1 });
 
-      // Fetch attendance for students enrolled in these courses
-      const attendance = await Attendance.find({ course: { $in: courses.map(course => course._id) } })
-          .populate('student', 'name email')
-          .populate('course', 'courseName');
-
-      if (!attendance || attendance.length === 0) {
-          return res.status(404).json({ message: 'No attendance records found for your courses' });
-      }
-
-      // Format the response
-      const response = attendance.map(record => ({
-          studentName: record.student.name,
-          studentEmail: record.student.email,
-          courseName: record.course.courseName,
-          date: record.date,
-          status: record.status,
-      }));
-
-      res.status(200).json({ message: 'Attendance fetched successfully', attendance: response });
+    res.status(200).json({ attendance });
   } catch (error) {
-      console.error('Error fetching attendance:', error.message);
-      res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
-  module.exports={assignMarksToStudent,markAttendance,getTeacherCourseAttendance}
+
+// Assign marks to students (updated from your existing code)
+const assignMarks = async (req, res) => {
+  const { courseId, studentId, marksObtained, totalMarks, semester } = req.body;
+  
+  try {
+    // Verify teacher is assigned to course
+    const isAssigned = await Course.exists({
+      _id: courseId,
+      teacher: req.user.id
+    });
+    
+    if (!isAssigned) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Verify student is enrolled
+    const isEnrolled = await Enrollment.exists({
+      student: studentId,
+      course: courseId
+    });
+    
+    if (!isEnrolled) {
+      return res.status(400).json({ message: 'Student not enrolled' });
+    }
+
+    // Create or update marks
+    const marks = await Marks.findOneAndUpdate(
+      { student: studentId, course: courseId, semester },
+      { marksObtained, totalMarks },
+      { upsert: true, new: true }
+    ).populate('student', 'name');
+
+    res.status(200).json({ marks });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get marks for a specific course
+const getCourseMarks = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    
+    // Verify teacher is assigned to course
+    const isAssigned = await Course.exists({
+      _id: courseId,
+      teacher: req.user.id
+    });
+    
+    if (!isAssigned) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const marks = await Marks.find({ course: courseId })
+      .populate('student', 'name email')
+      .sort({ semester: 1 });
+
+    res.status(200).json({ marks });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+module.exports = {
+  getAssignedCourses,
+  markAttendance,
+  getCourseAttendance,
+  assignMarks,
+  getCourseMarks
+};

@@ -5,6 +5,8 @@ const Marks = require('../models/Mark');
 const Department =require("../models/Department") 
 const Feedback =require("../models/Feedback")
 const Attendance= require("../models/Attendance")
+const EnrollmentPeriod=require("../models/Enrollmentperiod")
+const mongoose=require("mongoose")
 
 const enrollStudentInCourse = async (req, res) => {
     const { student, course, semester, department } = req.body; // Courses is now an array
@@ -64,106 +66,125 @@ const enrollStudentInCourse = async (req, res) => {
 
 // Student enrolls in courses
 const enrollInCourses = async (req, res) => {
-    const { courseIds } = req.body;
-    const studentId = req.user.id;
-  
-    try {
+  const { courseIds } = req.body;
+  const studentId = req.user.id;
+
+  try {
       // Get student info
       const student = await User.findById(studentId);
       if (!student) {
-        return res.status(404).json({ message: 'Student not found' });
+          return res.status(404).json({ message: 'Student not found' });
       }
-  
+
+      // Convert department to ObjectId if it's a string
+      let departmentId = student.department;
+      if (typeof student.department === 'string') {
+          const department = await Department.findOne({ 
+              departmentName: student.department 
+          });
+          if (!department) {
+              return res.status(400).json({ 
+                  message: 'Invalid department reference',
+                  department: student.department
+              });
+          }
+          departmentId = department._id;
+      }
+
       // Check if enrollment period is open
       const enrollmentPeriod = await EnrollmentPeriod.findOne({ 
-        department: student.department,
-        isOpen: true
+          department: departmentId, // Use the converted ObjectId
+          isOpen: true,
+          endDate: { $gt: new Date() } // Also check date is still valid
       });
       
       if (!enrollmentPeriod) {
-        return res.status(400).json({ message: 'No active enrollment period for your department' });
+          return res.status(400).json({ 
+              message: 'No active enrollment period for your department' 
+          });
       }
-  
-      // Check if current date is before end date
-      if (new Date() > enrollmentPeriod.endDate) {
-        return res.status(400).json({ message: 'Enrollment period has ended' });
-      }
-  
+
       // Check number of courses
       if (courseIds.length > enrollmentPeriod.maxCourses) {
-        return res.status(400).json({ 
-          message: `You cannot enroll in more than ${enrollmentPeriod.maxCourses} courses` 
-        });
+          return res.status(400).json({ 
+              message: `You cannot enroll in more than ${enrollmentPeriod.maxCourses} courses`
+          });
       }
-  
-      // Check failed courses from previous semesters
-      const failedCourses = await Marks.find({
-        student: studentId,
-        marksObtained: { $lt: 50 } // Assuming passing mark is 50
-      }).populate('course');
-  
-      // Get current semester courses
-      const currentSemesterCourses = await Course.find({
-        department: student.department,
-        semester: student.semester
-      });
-  
+
+      // Get failed courses and current semester courses in parallel
+      const [failedCourses, currentSemesterCourses] = await Promise.all([
+          Marks.find({
+              student: studentId,
+              marksObtained: { $lt: 50 }
+          }).populate('course'),
+          Course.find({
+              department: departmentId, // Use the converted ObjectId
+              semester: student.semester
+          })
+      ]);
+
       // Combine current semester courses with failed courses
       const availableCourses = [...currentSemesterCourses];
       failedCourses.forEach(failed => {
-        if (!availableCourses.some(c => c._id.equals(failed.course._id))) {
-          availableCourses.push(failed.course);
-        }
+          if (failed.course && !availableCourses.some(c => c._id.equals(failed.course._id))) {
+              availableCourses.push(failed.course);
+          }
       });
-  
+
       // Validate each course
       const enrollments = [];
       for (const courseId of courseIds) {
-        const course = availableCourses.find(c => c._id.equals(courseId));
-        if (!course) {
-          return res.status(400).json({ 
-            message: `Course ${courseId} is not available for enrollment` 
+          const course = availableCourses.find(c => c._id.equals(courseId));
+          if (!course) {
+              return res.status(400).json({ 
+                  message: `Course ${courseId} is not available for enrollment` 
+              });
+          }
+
+          // Check if already enrolled
+          const existingEnrollment = await Enrollment.findOne({
+              student: studentId,
+              course: courseId,
+              isOpen: true
           });
-        }
-  
-        // Check if already enrolled
-        const existingEnrollment = await Enrollment.findOne({
-          student: studentId,
-          course: courseId,
-          isOpen: true
-        });
-        
-        if (existingEnrollment) {
-          return res.status(400).json({ 
-            message: `You are already enrolled in course ${course.courseName}` 
+          
+          if (existingEnrollment) {
+              return res.status(400).json({ 
+                  message: `You are already enrolled in course ${course.courseName}` 
+              });
+          }
+
+          // Create enrollment
+          const newEnrollment = new Enrollment({
+              student: studentId,
+              course: courseId,
+              semester: course.semester,
+              department: departmentId, // Use the converted ObjectId
+              enrollmentDate: new Date(),
+              isApproved: false,
+              isOpen: true
           });
-        }
-  
-        // Create enrollment
-        const newEnrollment = new Enrollment({
-          student: studentId,
-          course: courseId,
-          semester: course.semester,
-          department: student.department,
-          enrollmentDate: new Date(),
-          isApproved: false,
-          isOpen: true
-        });
-  
-        await newEnrollment.save();
-        enrollments.push(newEnrollment);
+
+          await newEnrollment.save();
+          enrollments.push(newEnrollment);
       }
-  
+
       res.status(201).json({ 
-        message: 'Enrollment successful', 
-        enrollments,
-        failedCourses: failedCourses.map(f => f.course.courseName)
+          message: 'Enrollment successful', 
+          enrollments,
+          failedCourses: failedCourses.map(f => f.course?.courseName).filter(Boolean)
       });
-    } catch (error) {
+  } catch (error) {
       console.error('Error enrolling in courses:', error);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
-  };
+      res.status(500).json({ 
+          message: 'Server error', 
+          error: error.message,
+          ...(process.env.NODE_ENV === 'development' && {
+              stack: error.stack
+          })
+      });
+  }
+};
   const getStudentMarks = async (req, res) => {
     const studentId = req.user.id; // Assuming the student's ID is available in the token
 
@@ -199,31 +220,79 @@ const enrollInCourses = async (req, res) => {
 };
 
 
-
-
 const getCoursesForStudent = async (req, res) => {
-    const studentId = req.user.id; // Student ID from the token
+  try {
+      // 1. Verify request and user ID
+      if (!req.user) {
+          console.error('No user object in request');
+          return res.status(401).json({ message: 'Unauthorized' });
+      }
 
-    try {
-        // Fetch the student's details
-        const student = await User.findById(studentId);
-        if (!student) {
-            return res.status(404).json({ message: 'Student not found' });
-        }
+      const studentId = req.user.id;
+      console.log('Student ID from token:', studentId);
 
-        // Fetch courses for the student's department and semester
-        const courses = await Course.find({
-            department: student.department,
-            semester: student.semester,
-        });
+      if (!mongoose.Types.ObjectId.isValid(studentId)) {
+          return res.status(400).json({ 
+              message: 'Invalid student ID format',
+              receivedId: studentId
+          });
+      }
 
-        res.status(200).json({ message: 'Courses fetched successfully', courses });
-    } catch (error) {
-        console.error('Error fetching courses:', error.message);
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
+      // 2. Find student
+      const student = await User.findById(studentId)
+          .select('department semester')
+          .lean();
+      
+      if (!student) {
+          return res.status(404).json({ message: 'Student not found' });
+      }
+
+      // 3. Validate student data
+      if (!student.department || !student.semester) {
+          return res.status(400).json({
+              message: 'Student missing department or semester information'
+          });
+      }
+
+      // 4. Check if department is already an ObjectId
+      let departmentId = student.department;
+      if (typeof student.department === 'string') {
+          // Find department by name to get its ID
+          const department = await Department.findOne({ 
+              departmentName: student.department 
+          });
+          
+          if (!department) {
+              return res.status(400).json({
+                  message: 'Invalid department reference',
+                  department: student.department
+              });
+          }
+          departmentId = department._id;
+      }
+
+      // 5. Find courses with proper department ID
+      const courses = await Course.find({
+          department: departmentId,
+          semester: student.semester
+      }).lean();
+
+      return res.status(200).json({ 
+          message: 'Courses fetched successfully',
+          courses
+      });
+
+  } catch (error) {
+      console.error('Error in getCoursesForStudent:', error);
+      return res.status(500).json({
+          message: 'Server error',
+          error: error.message,
+          ...(process.env.NODE_ENV === 'development' && {
+              stack: error.stack
+          })
+      });
+  }
 };
-
 const getAllEnrollmentsForAdmin = async (req, res) => {
     try {
         const enrollments = await Enrollment.find().populate('student').populate('course');
@@ -240,7 +309,7 @@ const getAllEnrollmentsForAdmin = async (req, res) => {
             if (!courseEnrollments[courseId]) {
                 courseEnrollments[courseId] = {
                     courseId: enrollment.course._id,
-                    courseName: enrollment.course.name,
+                    courseName: enrollment.course.courseName,
                     students: [],
                 };
             }
@@ -286,8 +355,11 @@ const getStudentAttendance = async (req, res) => {
 
 const submitFeedback = async (req, res) => {
     const { courseId, feedback } = req.body;
-    const studentId = req.user.id; // Student ID from the token
+    
+    const studentId =req.user.id;
+     // Student ID from the token
 
+     console.log(studentId)
     try {
         // Check if the course exists
         const course = await Course.findById(courseId);
@@ -319,61 +391,106 @@ const submitFeedback = async (req, res) => {
 };
 
 const getAvailableCourses = async (req, res) => {
-    const studentId = req.user.id;
-  
-    try {
+  const studentId = req.user?.id;
+
+  try {
       const student = await User.findById(studentId);
       if (!student) {
-        return res.status(404).json({ message: 'Student not found' });
+          return res.status(404).json({ message: 'Student not found' });
       }
-  
+
+      // Convert department to ObjectId if it's a string
+      let departmentId = student.department;
+      if (typeof student.department === 'string') {
+          const department = await Department.findOne({ 
+              departmentName: student.department 
+          });
+          if (!department) {
+              return res.status(400).json({ 
+                  message: 'Invalid department reference',
+                  department: student.department
+              });
+          }
+          departmentId = department._id;
+      }
+
       // Check if enrollment period is open
       const enrollmentPeriod = await EnrollmentPeriod.findOne({ 
-        department: student.department,
-        isOpen: true
+          department: departmentId,  // Use the converted ObjectId
+          isOpen: true,
+          endDate: { $gt: new Date() } // Also check date is still valid
       });
       
       if (!enrollmentPeriod) {
-        return res.status(200).json({ 
-          message: 'No active enrollment period', 
-          courses: [],
-          isEnrollmentOpen: false
-        });
+          return res.status(200).json({ 
+              message: 'No active enrollment period', 
+              courses: [],
+              isEnrollmentOpen: false
+          });
       }
-  
-      // Get failed courses
-      const failedCourses = await Marks.find({
-        student: studentId,
-        marksObtained: { $lt: 50 }
-      }).populate('course');
-  
-      // Get current semester courses
-      const currentSemesterCourses = await Course.find({
-        department: student.department,
-        semester: student.semester
-      });
-  
+
+      // Get failed courses and current semester courses in parallel
+      const [failedCourses, currentSemesterCourses] = await Promise.all([
+          Marks.find({
+              student: studentId,
+              marksObtained: { $lt: 50 }
+          }).populate('course'),
+          Course.find({
+              department: departmentId,  // Use the converted ObjectId
+              semester: student.semester
+          })
+      ]);
+
       // Combine and remove duplicates
       const availableCourses = [...currentSemesterCourses];
       failedCourses.forEach(failed => {
-        if (!availableCourses.some(c => c._id.equals(failed.course._id))) {
-          availableCourses.push(failed.course);
-        }
+          if (failed.course && !availableCourses.some(c => c._id.equals(failed.course._id))) {
+              availableCourses.push(failed.course);
+          }
       });
-  
+
       res.status(200).json({ 
-        message: 'Available courses fetched',
-        courses: availableCourses,
-        isEnrollmentOpen: true,
-        maxCourses: enrollmentPeriod.maxCourses
+          message: 'Available courses fetched',
+          courses: availableCourses,
+          isEnrollmentOpen: true,
+          maxCourses: enrollmentPeriod.maxCourses
       });
-    } catch (error) {
+  } catch (error) {
       console.error('Error fetching available courses:', error);
-      res.status(500).json({ message: 'Server error', error: error.message });
-    }
-  };
-  
+      res.status(500).json({ 
+          message: 'Server error', 
+          error: error.message,
+          ...(process.env.NODE_ENV === 'development' && {
+              stack: error.stack
+          })
+      });
+  }
+};
+
+const getMyAttendance = async (req, res) => {
+  try {
+    const attendance = await Attendance.find({ student: req.user.id })
+      .populate('course', 'courseName')
+      .sort({ date: -1 });
+    
+    res.status(200).json({ attendance });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get student's own marks
+const getMyMarks = async (req, res) => {
+  try {
+    const marks = await Marks.find({ student: req.user.id })
+      .populate('course', 'courseName')
+      .sort({ semester: 1 });
+    
+    res.status(200).json({ marks });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
 
 
-
-  module.exports={enrollStudentInCourse,getStudentMarks,getCoursesForStudent,getCoursesForStudent,getAllEnrollmentsForAdmin,getStudentAttendance,submitFeedback,enrollInCourses,getAvailableCourses}
+  module.exports={enrollStudentInCourse,getStudentMarks,getCoursesForStudent,getAllEnrollmentsForAdmin,getStudentAttendance,submitFeedback,enrollInCourses,getAvailableCourses,getMyMarks ,getMyAttendance}

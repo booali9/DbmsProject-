@@ -22,7 +22,9 @@ const {
   getAllCourses,
   getAllDepartments,
   getActiveEnrollments,
-  getEnrollmentStudents
+  getEnrollmentStudents,
+  getAllStudentAttendance,
+  getAllStudentMarks
 } = require("../controllers/admincontroller");
 const { isAdmin } = require("../middleware/authMiddleware");
 const {authenticate} = require("../middleware/authMiddleware");
@@ -48,6 +50,10 @@ router.get("/departments", authenticate, isAdmin, getAllDepartments);
 router.get("/active-enrollments", authenticate, isAdmin,getActiveEnrollments);
 router.get("/getenrollementstudent", authenticate, isAdmin, getEnrollmentStudents);
 
+router.get('/attendance', authenticate, isAdmin, getAllStudentAttendance);
+
+// Get all student marks
+router.get('/marks', authenticate, isAdmin, getAllStudentMarks);
 
 
 
