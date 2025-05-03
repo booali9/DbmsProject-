@@ -1,15 +1,26 @@
 const Course = require('../models/Course');
 const Attendance = require('../models/Attendance');
 const Marks = require('../models/Mark');
+const Enrollment=require("../models/Enrollement")
 
-// Get courses assigned to teacher
 const getAssignedCourses = async (req, res) => {
   try {
     const courses = await Course.find({ teacher: req.user.id })
       .populate('department', 'departmentName')
-      .select('courseName department semester section');
-    
-    res.status(200).json({ courses });
+      .populate('enrolledStudents', 'name email studentId') // Include all student fields you need
+      .select('courseName department semester section enrolledStudents');
+
+    const updatedCourses = courses.map(course => ({
+      _id: course._id,
+      courseName: course.courseName,
+      department: course.department,
+      semester: course.semester,
+      section: course.section,
+      enrolledStudents: course.enrolledStudents, // This now contains all populated student data
+      numberOfStudents: course.enrolledStudents.length
+    }));
+
+    res.status(200).json({ courses: updatedCourses });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -17,10 +28,9 @@ const getAssignedCourses = async (req, res) => {
 
 // Mark attendance for a course (updated from your existing code)
 const markAttendance = async (req, res) => {
-  const { courseId, date, students } = req.body;
+  const { courseId, date, students, classesTaken } = req.body;
   
   try {
-    // Check if course is assigned to teacher
     const course = await Course.findOne({ 
       _id: courseId, 
       teacher: req.user.id 
@@ -30,10 +40,8 @@ const markAttendance = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized for this course' });
     }
 
-    // Process attendance records
     const attendanceRecords = await Promise.all(
       students.map(async student => {
-        // Check enrollment
         const isEnrolled = await Enrollment.exists({
           student: student.studentId,
           course: courseId
@@ -43,10 +51,13 @@ const markAttendance = async (req, res) => {
           throw new Error(`Student ${student.studentId} not enrolled`);
         }
 
-        // Create or update attendance
         return Attendance.findOneAndUpdate(
           { student: student.studentId, course: courseId, date },
-          { status: student.status },
+          { 
+            status: student.status,
+            classesTaken,
+            markedBy: req.user.id
+          },
           { upsert: true, new: true }
         ).populate('student', 'name');
       })
@@ -60,7 +71,6 @@ const markAttendance = async (req, res) => {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
-
 // Get attendance for a specific course
 const getCourseAttendance = async (req, res) => {
   try {

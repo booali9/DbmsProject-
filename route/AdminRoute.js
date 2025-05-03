@@ -24,7 +24,14 @@ const {
   getActiveEnrollments,
   getEnrollmentStudents,
   getAllStudentAttendance,
-  getAllStudentMarks
+  getAllStudentMarks,
+  getAllPendingEnrollments,
+  bulkApproveEnrollments,
+ 
+  getAllMarks,
+  updateAttendance,
+  updateMarks
+
 } = require("../controllers/admincontroller");
 const { isAdmin } = require("../middleware/authMiddleware");
 const {authenticate} = require("../middleware/authMiddleware");
@@ -45,16 +52,22 @@ router.post("/assign-course", authenticate, isAdmin, assignCourseToTeacher);
 router.put("/editAssignedCourse/:id", authenticate, isAdmin, editAssignedCourse);
 router.post("/startenrollment", authenticate, isAdmin, startNewEnrollment);
 router.post("/stopenrollement", authenticate, isAdmin, stopEnrollment);
+router.post("/bulkenrollementapprove", authenticate, isAdmin,bulkApproveEnrollments );
 router.get("/courses", authenticate, isAdmin,getAllCourses);
 router.get("/departments", authenticate, isAdmin, getAllDepartments);
 router.get("/active-enrollments", authenticate, isAdmin,getActiveEnrollments);
 router.get("/getenrollementstudent", authenticate, isAdmin, getEnrollmentStudents);
+router.get("/getpendingenrollement", authenticate, isAdmin, getAllPendingEnrollments);
 
 router.get('/attendance', authenticate, isAdmin, getAllStudentAttendance);
 
 // Get all student marks
 router.get('/marks', authenticate, isAdmin, getAllStudentMarks);
 
+router.get('/attendance', authenticate, isAdmin, getAllAttendance);
+router.put('/attendance/:attendanceId', authenticate, isAdmin, updateAttendance);
+router.get('/marks', authenticate, isAdmin, getAllMarks);
+router.put('/marks/:marksId', authenticate, isAdmin, updateMarks);
 
 
 router.get("/getallstudenTmarks", authenticate, isAdmin, getAllStudentsMarks);

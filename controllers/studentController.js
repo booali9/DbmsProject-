@@ -110,7 +110,7 @@ const enrollInCourses = async (req, res) => {
               message: `You cannot enroll in more than ${enrollmentPeriod.maxCourses} courses`
           });
       }
-
+  
       // Get failed courses and current semester courses in parallel
       const [failedCourses, currentSemesterCourses] = await Promise.all([
           Marks.find({
@@ -185,40 +185,7 @@ const enrollInCourses = async (req, res) => {
       });
   }
 };
-  const getStudentMarks = async (req, res) => {
-    const studentId = req.user.id; // Assuming the student's ID is available in the token
-
-    try {
-        // Fetch all enrollments for the student
-        const enrollments = await Enrollment.find({ student: studentId }).populate('course');
-
-        if (!enrollments || enrollments.length === 0) {
-            return res.status(404).json({ message: 'No enrollments found for this student' });
-        }
-
-        // Fetch marks for all courses the student is enrolled in
-        const marks = await Marks.find({ student: studentId }).populate('course');
-
-        if (!marks || marks.length === 0) {
-            return res.status(404).json({ message: 'No marks found for this student' });
-        }
-
-        // Format the response to show course details and marks
-        const response = marks.map(mark => ({
-            courseName: mark.course.name, // Assuming the Course schema has a `name` field
-            courseCode: mark.course.code, // Assuming the Course schema has a `code` field
-            semester: mark.semester,
-            marksObtained: mark.marksObtained,
-            totalMarks: mark.totalMarks
-        }));
-
-        res.status(200).json({ message: 'Marks fetched successfully', marks: response });
-    } catch (error) {
-        console.error('Error fetching student marks:', error.message);
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-};
-
+ 
 
 const getCoursesForStudent = async (req, res) => {
   try {
@@ -328,30 +295,6 @@ const getAllEnrollmentsForAdmin = async (req, res) => {
     }
 };
 
-const getStudentAttendance = async (req, res) => {
-    const studentId = req.user.id; // Student ID from the token
-
-    try {
-        // Fetch attendance records for the student
-        const attendance = await Attendance.find({ student: studentId }).populate('course', 'courseName');
-
-        if (!attendance || attendance.length === 0) {
-            return res.status(404).json({ message: 'No attendance records found' });
-        }
-
-        // Format the response
-        const response = attendance.map(record => ({
-            courseName: record.course.courseName,
-            date: record.date,
-            status: record.status,
-        }));
-
-        res.status(200).json({ message: 'Attendance fetched successfully', attendance: response });
-    } catch (error) {
-        console.error('Error fetching attendance:', error.message);
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-};
 
 const submitFeedback = async (req, res) => {
     const { courseId, feedback } = req.body;
@@ -492,5 +435,32 @@ const getMyMarks = async (req, res) => {
   }
 };
 
+const getStudentAttendance = async (req, res) => {
+    try {
+      const attendance = await Attendance.find({ student: req.user.id })
+        .populate('course', 'courseName department')
+        .sort({ date: -1 });
+  
+      res.status(200).json({ attendance });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  };
+  
+  const getStudentMarks = async (req, res) => {
+    try {
+      const marks = await Marks.find({ student: req.user.id })
+        .populate('course', 'courseName department')
+        .sort({ semester: 1 });
+  
+      res.status(200).json({ marks });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  };
+  
+  
 
-  module.exports={enrollStudentInCourse,getStudentMarks,getCoursesForStudent,getAllEnrollmentsForAdmin,getStudentAttendance,submitFeedback,enrollInCourses,getAvailableCourses,getMyMarks ,getMyAttendance}
+
+  module.exports={enrollStudentInCourse,getStudentMarks,getCoursesForStudent,getAllEnrollmentsForAdmin,submitFeedback,enrollInCourses,getAvailableCourses,getMyMarks ,getMyAttendance,getStudentAttendance,
+    getStudentMarks}

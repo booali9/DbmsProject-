@@ -383,39 +383,7 @@ const editMarks = async (req, res) => {
       res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
-const approveEnrollment = async (req, res) => {
-  const { enrollmentId } = req.params;
-  const adminId = req.user.id; // Admin ID from the token
 
-  try {
-      // Check if the user is an admin
-      if (req.user.role !== 'superadmin') {
-          return res.status(403).json({ message: 'Only admins can approve enrollments' });
-      }
-
-      // Find the enrollment record
-      const enrollment = await Enrollment.findById(enrollmentId);
-      if (!enrollment) {
-          return res.status(404).json({ message: 'Enrollment not found' });
-      }
-
-      // Approve the enrollment
-      enrollment.isApproved = true;
-      await enrollment.save();
-
-      // Add the student to the course's enrolledStudents list
-      const course = await Course.findById(enrollment.course);
-      if (!course.enrolledStudents.includes(enrollment.student)) {
-          course.enrolledStudents.push(enrollment.student);
-          await course.save();
-      } 
-
-      res.status(200).json({ message: 'Enrollment approved successfully', enrollment });
-  } catch (error) {
-      console.error('Error approving enrollment:', error.message);
-      res.status(500).json({ message: 'Server error', error: error.message });
-  }
-};
 
 const startNewEnrollment = async (req, res) => {
   const { department, semester, startDate, endDate } = req.body;
@@ -659,37 +627,7 @@ const endSemester = async (req, res) => {
   }
 };
 
-const getAllAttendance = async (req, res) => {
-  try {
-      // Check if the user is an admin
-      if (req.user.role !== 'superadmin') {
-          return res.status(403).json({ message: 'Only admins can fetch all attendance records' });
-      }
 
-      // Fetch all attendance records
-      const attendance = await Attendance.find()
-          .populate('student', 'name email')
-          .populate('course', 'courseName');
-
-      if (!attendance || attendance.length === 0) {
-          return res.status(404).json({ message: 'No attendance records found' });
-      }
-
-      // Format the response
-      const response = attendance.map(record => ({
-          studentName: record.student.name,
-          studentEmail: record.student.email,
-          courseName: record.course.courseName,
-          date: record.date,
-          status: record.status,
-      }));
-
-      res.status(200).json({ message: 'All attendance records fetched successfully', attendance: response });
-  } catch (error) {
-      console.error('Error fetching all attendance:', error.message);
-      res.status(500).json({ message: 'Server error', error: error.message });
-  }
-};
 
 const getAllFeedback = async (req, res) => {
   try {
@@ -924,8 +862,254 @@ const getAllStudentMarks = async (req, res) => {
   }
 };
 
+const getAllPendingEnrollments = async (req, res) => {
+  try {
+    // Get all enrollments that are not yet approved
+    const enrollments = await Enrollment.find({ isApproved: false })
+      .populate('student', 'name email department semester')
+      .populate('course', 'courseName semester department')
+      .populate('department', 'departmentName')
+      .sort({ enrollmentDate: -1 });
+
+    // Group by course for admin view
+    const groupedEnrollments = enrollments.reduce((acc, enrollment) => {
+      const courseId = enrollment.course._id.toString();
+      if (!acc[courseId]) {
+        acc[courseId] = {
+          courseId: enrollment.course._id,
+          courseName: enrollment.course.courseName,
+          semester: enrollment.course.semester,
+          department: enrollment.department.departmentName,
+          pendingStudents: []
+        };
+      }
+      
+      acc[courseId].pendingStudents.push({
+        enrollmentId: enrollment._id,
+        studentId: enrollment.student._id,
+        studentName: enrollment.student.name,
+        studentEmail: enrollment.student.email,
+        enrollmentDate: enrollment.enrollmentDate,
+        department: enrollment.student.department,
+        semester: enrollment.student.semester
+      });
+
+      return acc;
+    }, {});
+
+    res.status(200).json({
+      message: 'Pending enrollments fetched successfully',
+      enrollments: Object.values(groupedEnrollments)
+    });
+  } catch (error) {
+    console.error('Error fetching pending enrollments:', error);
+    res.status(500).json({ 
+      message: 'Server error', 
+      error: error.message 
+    });
+  }
+};
+const approveEnrollment = async (req, res) => {
+  const { enrollmentId } = req.body;
+
+  try {
+    // Find the enrollment
+    const enrollment = await Enrollment.findById(enrollmentId)
+      .populate('student')
+      .populate('course');
+      console.log(enrollmentId)
+
+    if (!enrollment) {
+      return res.status(404).json({ message: 'Enrollment not found' });
+    }
+
+    // Check if already approved
+    if (enrollment.isApproved) {
+      return res.status(400).json({ message: 'Enrollment already approved' });
+    }
+
+    // Update enrollment status
+    enrollment.isApproved = true;
+    enrollment.approvedBy = req.user.id;
+    enrollment.approvalDate = new Date();
+    await enrollment.save();
+
+    // Add student to course's enrolledStudents
+    const course = await Course.findById(enrollment.course._id);
+    if (!course.enrolledStudents.includes(enrollment.student._id)) {
+      course.enrolledStudents.push(enrollment.student._id);
+      await course.save();
+    }
+
+    res.status(200).json({ 
+      message: 'Enrollment approved successfully',
+      enrollment 
+    });
+  } catch (error) {
+    console.error('Error approving enrollment:', error);
+    res.status(500).json({ 
+      message: 'Server error', 
+      error: error.message 
+    });
+  }
+};
+
+const bulkApproveEnrollments = async (req, res) => {
+  const { enrollmentIds } = req.body;
+
+  try {
+    if (!enrollmentIds || !Array.isArray(enrollmentIds)) {
+      return res.status(400).json({ message: 'Invalid enrollment IDs' });
+    }
+
+    const results = {
+      total: enrollmentIds.length,
+      approved: 0,
+      failed: 0,
+      errors: []
+    };
+
+    // Process each enrollment
+    await Promise.all(enrollmentIds.map(async (id) => {
+      try {
+        const enrollment = await Enrollment.findById(id)
+          .populate('student')
+          .populate('course');
+
+        if (!enrollment) {
+          throw new Error('Enrollment not found');
+        }
+
+        if (enrollment.isApproved) {
+          throw new Error('Already approved');
+        }
+
+        // Approve enrollment
+        enrollment.isApproved = true;
+        enrollment.approvedBy = req.user.id;
+        enrollment.approvalDate = new Date();
+        await enrollment.save();
+
+        // Add student to course
+        const course = await Course.findById(enrollment.course._id);
+        if (!course.enrolledStudents.includes(enrollment.student._id)) {
+          course.enrolledStudents.push(enrollment.student._id);
+          await course.save();
+        }
+
+        results.approved++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          enrollmentId: id,
+          error: error.message
+        });
+      }
+    }));
+
+    res.status(200).json({
+      message: 'Bulk approval completed',
+      results
+    });
+  } catch (error) {
+    console.error('Error in bulk approval:', error);
+    res.status(500).json({ 
+      message: 'Server error', 
+      error: error.message 
+    });
+  }
+};
+
+const getAllAttendance = async (req, res) => {
+  try {
+    const { courseId, date, studentId } = req.query;
+    const filter = {};
+    
+    if (courseId) filter.course = courseId;
+    if (date) filter.date = new Date(date);
+    if (studentId) filter.student = studentId;
+
+    const attendance = await Attendance.find(filter)
+      .populate('student', 'name email')
+      .populate('course', 'courseName')
+      .populate('markedBy', 'name')
+      .sort({ date: -1 });
+    
+    res.status(200).json({ attendance });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+const updateAttendance = async (req, res) => {
+  const { attendanceId } = req.params;
+  const { status, classesTaken } = req.body;
+
+  try {
+    const attendance = await Attendance.findByIdAndUpdate(
+      attendanceId,
+      { status, classesTaken },
+      { new: true }
+    ).populate('student course');
+
+    if (!attendance) {
+      return res.status(404).json({ message: 'Attendance record not found' });
+    }
+
+    res.status(200).json({ 
+      message: 'Attendance updated successfully',
+      attendance
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+const getAllMarks = async (req, res) => {
+  try {
+    const { courseId, semester, studentId } = req.query;
+    const filter = {};
+    
+    if (courseId) filter.course = courseId;
+    if (semester) filter.semester = semester;
+    if (studentId) filter.student = studentId;
+
+    const marks = await Marks.find(filter)
+      .populate('student', 'name email')
+      .populate('course', 'courseName')
+      .sort({ semester: 1 });
+    
+    res.status(200).json({ marks });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+const updateMarks = async (req, res) => {
+  const { marksId } = req.params;
+  const { marksObtained, totalMarks } = req.body;
+
+  try {
+    const marks = await Marks.findByIdAndUpdate(
+      marksId,
+      { marksObtained, totalMarks },
+      { new: true }
+    ).populate('student course');
+
+    if (!marks) {
+      return res.status(404).json({ message: 'Marks record not found' });
+    }
+
+    res.status(200).json({ 
+      message: 'Marks updated successfully',
+      marks
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
 
 
 
 module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback,getAllDepartments,getAllCourses,getActiveEnrollments,getEnrollmentStudents, getAllStudentAttendance,
-  getAllStudentMarks}; 
+  getAllStudentMarks,getAllPendingEnrollments,bulkApproveEnrollments, getAllAttendance,updateAttendance,getAllMarks, updateMarks}; 
