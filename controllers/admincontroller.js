@@ -4,6 +4,7 @@ const Department = require('../models/Department')
 const Marks=require("../models/Mark")
 const Enrollment = require('../models/Enrollement');
 const EnrollmentPeriod=require('../models/Enrollmentperiod')
+const Attendance=require("../models/Attendance")
 const mongoose = require("mongoose");
 
 const bcrypt = require("bcryptjs");
@@ -1020,6 +1021,18 @@ const bulkApproveEnrollments = async (req, res) => {
   }
 };
 
+const getAllStudents = async (req, res) => {
+  try {
+    const students = await User.find({ role: 'undergrad' })
+      .select('-password')
+      .sort({ createdAt: -1 });
+    res.status(200).json({ students });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Get all attendance (with filters)
 const getAllAttendance = async (req, res) => {
   try {
     const { courseId, date, studentId } = req.query;
@@ -1030,8 +1043,8 @@ const getAllAttendance = async (req, res) => {
     if (studentId) filter.student = studentId;
 
     const attendance = await Attendance.find(filter)
-      .populate('student', 'name email')
-      .populate('course', 'courseName')
+      .populate('student', 'name email rollNumber')
+      .populate('course', 'courseName courseCode')
       .populate('markedBy', 'name')
       .sort({ date: -1 });
     
@@ -1041,6 +1054,21 @@ const getAllAttendance = async (req, res) => {
   }
 };
 
+// Get attendance for a specific student
+const getStudentAttendance = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const attendance = await Attendance.find({ student: studentId })
+      .populate('course', 'courseName courseCode')
+      .sort({ date: -1 });
+    
+    res.status(200).json({ attendance });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Update attendance
 const updateAttendance = async (req, res) => {
   const { attendanceId } = req.params;
   const { status, classesTaken } = req.body;
@@ -1065,6 +1093,7 @@ const updateAttendance = async (req, res) => {
   }
 };
 
+// Get all marks (with filters)
 const getAllMarks = async (req, res) => {
   try {
     const { courseId, semester, studentId } = req.query;
@@ -1075,8 +1104,8 @@ const getAllMarks = async (req, res) => {
     if (studentId) filter.student = studentId;
 
     const marks = await Marks.find(filter)
-      .populate('student', 'name email')
-      .populate('course', 'courseName')
+      .populate('student', 'name email rollNumber')
+      .populate('course', 'courseName courseCode')
       .sort({ semester: 1 });
     
     res.status(200).json({ marks });
@@ -1085,6 +1114,21 @@ const getAllMarks = async (req, res) => {
   }
 };
 
+// Get marks for a specific student
+const getStudentMarks = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const marks = await Marks.find({ student: studentId })
+      .populate('course', 'courseName courseCode')
+      .sort({ semester: 1 });
+    
+    res.status(200).json({ marks });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// Update marks
 const updateMarks = async (req, res) => {
   const { marksId } = req.params;
   const { marksObtained, totalMarks } = req.body;
@@ -1110,6 +1154,5 @@ const updateMarks = async (req, res) => {
 };
 
 
-
 module.exports = { registerUser,editUser,deleteUser,getAllUsers,createCourse,assignCourseToTeacher,createDepartment,getAllStudentsMarks,editMarks ,approveEnrollment,startNewEnrollment,updateSemesterForPassedStudents,editDepartment,editCourse,editAssignedCourse,stopEnrollment,endSemester,getAllAttendance,getAllFeedback,getAllDepartments,getAllCourses,getActiveEnrollments,getEnrollmentStudents, getAllStudentAttendance,
-  getAllStudentMarks,getAllPendingEnrollments,bulkApproveEnrollments, getAllAttendance,updateAttendance,getAllMarks, updateMarks}; 
+  getAllStudentMarks,getAllPendingEnrollments,bulkApproveEnrollments, getAllAttendance,updateAttendance,getAllMarks, updateMarks,getAllStudents}; 

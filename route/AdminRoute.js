@@ -27,7 +27,7 @@ const {
   getAllStudentMarks,
   getAllPendingEnrollments,
   bulkApproveEnrollments,
- 
+ getAllStudents,
   getAllMarks,
   updateAttendance,
   updateMarks
@@ -68,7 +68,7 @@ router.get('/attendance', authenticate, isAdmin, getAllAttendance);
 router.put('/attendance/:attendanceId', authenticate, isAdmin, updateAttendance);
 router.get('/marks', authenticate, isAdmin, getAllMarks);
 router.put('/marks/:marksId', authenticate, isAdmin, updateMarks);
-
+router.get('/students', authenticate, isAdmin, getAllStudents);
 
 router.get("/getallstudenTmarks", authenticate, isAdmin, getAllStudentsMarks);
 router.get("/getallfedback", authenticate, isAdmin, getAllFeedback);
