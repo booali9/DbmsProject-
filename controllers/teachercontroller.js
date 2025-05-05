@@ -135,6 +135,7 @@ const assignMarks = async (req, res) => {
 };
 
 // Get marks for a specific course
+// Get marks for a specific course
 const getCourseMarks = async (req, res) => {
   try {
     const { courseId } = req.params;
@@ -153,12 +154,18 @@ const getCourseMarks = async (req, res) => {
       .populate('student', 'name email')
       .sort({ semester: 1 });
 
-    res.status(200).json({ marks });
+    res.status(200).json({ 
+      success: true,
+      marks // Make sure this matches what your frontend expects
+    });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error', 
+      error: error.message 
+    });
   }
 };
-
 module.exports = {
   getAssignedCourses,
   markAttendance,

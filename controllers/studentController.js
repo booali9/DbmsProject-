@@ -459,8 +459,112 @@ const getStudentAttendance = async (req, res) => {
     }
   };
   
+  // Get enrolled courses with marks and attendance
+const getEnrolledCoursesWithDetails = async (req, res) => {
+    try {
+      const studentId = req.user.id;
+      
+      // Get all enrollments
+      const enrollments = await Enrollment.find({ 
+        student: studentId,
+        isApproved: true 
+      }).populate('course', 'courseName department semester');
+      
+      // Get marks and attendance in parallel
+      const [marks, attendance] = await Promise.all([
+        Marks.find({ student: studentId }).populate('course'),
+        Attendance.find({ student: studentId }).populate('course')
+      ]);
+      
+      // Combine data
+      const courses = enrollments.map(enrollment => {
+        const courseMarks = marks.filter(m => m.course._id.equals(enrollment.course._id));
+        const courseAttendance = attendance.filter(a => a.course._id.equals(enrollment.course._id));
+        
+        return {
+          ...enrollment.course.toObject(),
+          marks: courseMarks,
+          attendance: courseAttendance,
+          enrollmentDate: enrollment.enrollmentDate
+        };
+      });
+      
+      res.status(200).json({ courses });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  };
   
+  // Check semester progression eligibility
+  const checkSemesterProgression = async (req, res) => {
+    try {
+      const studentId = req.user.id;
+      const student = await User.findById(studentId);
+      
+      if (!student) {
+        return res.status(404).json({ message: 'Student not found' });
+      }
+      
+      // Get current semester marks
+      const marks = await Marks.find({ 
+        student: studentId,
+        semester: student.semester 
+      });
+      
+      // Count passed courses (assuming passing mark is 50)
+      const passedCourses = marks.filter(mark => mark.marksObtained >= 50).length;
+      const totalCourses = marks.length;
+      const canProgress = passedCourses >= 3;
+      
+      res.status(200).json({
+        canProgress,
+        passedCourses,
+        totalCourses,
+        currentSemester: student.semester,
+        requiredToPass: 3
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  };
+  
+  // Update semester if eligible
+  const updateSemester = async (req, res) => {
+    try {
+      const studentId = req.user.id;
+      const student = await User.findById(studentId);
+      
+      if (!student) {
+        return res.status(404).json({ message: 'Student not found' });
+      }
+      
+      // Check eligibility
+      const marks = await Marks.find({ 
+        student: studentId,
+        semester: student.semester 
+      });
+      
+      const passedCourses = marks.filter(mark => mark.marksObtained >= 50).length;
+      
+      if (passedCourses < 3) {
+        return res.status(400).json({ 
+          message: `You need to pass at least 3 courses. Currently passed: ${passedCourses}`
+        });
+      }
+      
+      // Update semester
+      student.semester += 1;
+      await student.save();
+      
+      res.status(200).json({
+        message: 'Semester updated successfully',
+        newSemester: student.semester
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Server error', error: error.message });
+    }
+  };
 
 
   module.exports={enrollStudentInCourse,getStudentMarks,getCoursesForStudent,getAllEnrollmentsForAdmin,submitFeedback,enrollInCourses,getAvailableCourses,getMyMarks ,getMyAttendance,getStudentAttendance,
-    getStudentMarks}
+    getStudentMarks,updateSemester,getEnrolledCoursesWithDetails,checkSemesterProgression}
