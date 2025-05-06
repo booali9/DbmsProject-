@@ -10,6 +10,7 @@ const authRoute = require("./route/AuthRoute");
 const StudentRoute = require("./route/StudentRoute");
 const TeacherRoute = require("./route/TeacherRoute");
 const CanteenRoute = require("./route/CanteenRoute");
+const LocationRoute = require("./route/LocationRoute");
 
 // Load environment variables
 dotenv.config();
@@ -41,6 +42,7 @@ app.use("/api/user", authRoute);
 app.use("/api/student", StudentRoute);
 app.use("/api/teacher", TeacherRoute);
 app.use("/api/canteen", CanteenRoute);
+app.use("/api/location",  LocationRoute);
 
 // Store user locations in memory
 const userLocations = new Map();
@@ -53,13 +55,24 @@ io.on("connection", (socket) => {
   socket.emit("initial-locations", Array.from(userLocations.entries()));
 
   // Handle location updates
-  socket.on("send-location", (data) => {
-    const { latitude, longitude, role } = data;
-    userLocations.set(socket.id, { latitude, longitude, role });
-
-    // Broadcast the updated location to all clients
-    io.emit("receive-location", { id: socket.id, latitude, longitude, role });
+ // Broadcast location updates to all clients
+function broadcastLocationUpdate(userId, locationData) {
+  io.emit('location-update', {
+    type: 'location-update',
+    userId,
+    ...locationData
   });
+}
+
+// Modify your existing location handler
+socket.on("send-location", (data) => {
+  const { latitude, longitude, role, userId } = data;
+  
+  if (role === 'point') {
+    userLocations.set(userId, { latitude, longitude, role });
+    broadcastLocationUpdate(userId, { latitude, longitude });
+  }
+});
 
   // Handle user disconnection
   socket.on("disconnect", () => {
@@ -68,6 +81,8 @@ io.on("connection", (socket) => {
     io.emit("user-disconnect", socket.id); // Notify other clients
   });
 });
+
+
 
 // Set port dynamically for hosting and local development
 const PORT = process.env.PORT || 5000;

@@ -20,6 +20,24 @@ const userSchema = new mongoose.Schema({
   feesProof: { type: String }, // URL of the uploaded fee receipt
   resetPasswordOTP: { type: String }, // OTP for password reset
   resetPasswordOTPExpires: { type: Date }, // Expiry time for the OTP
+  location: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      default: [0, 0]
+    }
+  },
+  lastLocationUpdate: Date,
+  isLocationPublic: {
+    type: Boolean,
+    default: function() {
+      return this.role === 'point'; // Only point users have public locations by default
+    }
+  }
 });
 
 module.exports = mongoose.model('User', userSchema);

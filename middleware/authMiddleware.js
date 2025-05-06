@@ -56,7 +56,24 @@ const authenticate = async (req, res, next) => {
   }
 };
 
+const authPointUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.body.userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Only allow point users to set locations
+    if (req.path === '/set' && user.role !== 'point') {
+      return res.status(403).json({ error: "Only point users can set locations" });
+    }
+    
+    next();
+  } catch (error) {
+    res.status(500).json({ error: "Authentication failed" });
+  }
+};
 
 
-
-module.exports = { isAdmin,authenticate };
+module.exports = { isAdmin,authenticate ,authPointUser};
