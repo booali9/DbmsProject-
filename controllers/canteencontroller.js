@@ -233,20 +233,20 @@ exports.getMenu = async (req, res) => {
 };
 
 // Upload Bill
+// Update the uploadBill function
 exports.uploadBill = async (req, res) => {
   try {
-    const userId = req.user.
-    id;
-    const { file } = req; // Assuming you're using multer for file uploads
+    const userId = req.user.id;
+    const { file } = req; // From multer memory storage
 
     // Check if user is a canteen owner
     const user = await User.findById(userId);
-    if (user.role !== 'canteen') {
+    if (!user || user.role !== 'canteen') {
       return res.status(403).json({ success: false, message: 'Only canteen owners can upload bills' });
     }
 
-    // Upload file to cloud storage
-    const result = await uploadToCloudinary(file.path); // Implement your file upload logic
+    // Upload file to cloud storage using buffer instead of path
+    const result = await uploadToCloudinary(file.buffer); 
 
     // Find or create canteen entry
     let canteen = await Canteen.findOne({ submittedBy: userId });
