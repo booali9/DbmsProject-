@@ -72,7 +72,7 @@ app.get('/api/health', (req, res) => {
 module.exports = app; // Remove server.listen() in production
 // Vercel requires module.exports for serverless functions
 module.exports = app;
-
+//
 // Only listen locally during development
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 5000;
