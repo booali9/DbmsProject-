@@ -63,6 +63,13 @@ io.on("connection", (socket) => {
   });
 });
 
+// Health check endpoint (required for Vercel)
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'OK' });
+});
+
+// Vercel-specific export
+module.exports = app; // Remove server.listen() in production
 // Vercel requires module.exports for serverless functions
 module.exports = app;
 
