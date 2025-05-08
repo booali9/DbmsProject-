@@ -237,7 +237,7 @@ exports.getMenu = async (req, res) => {
 exports.uploadBill = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { file } = req; // From multer memory storage
+    const { file } = req;
 
     // Check if user is a canteen owner
     const user = await User.findById(userId);
