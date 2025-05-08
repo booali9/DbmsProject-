@@ -75,11 +75,22 @@ const enrollmentSchema = new mongoose.Schema({
 });
 
 // Add compound index for student-course-semester uniqueness
+// Modified unique index to only prevent duplicate active enrollments for the same course
+// Replace your current index with this:
+// Replace your current index definition with:
+// Replace your current index definition with this optimized version:
+// Replace your current index with this
 enrollmentSchema.index(
-  { student: 1, course: 1, semester: 1 }, 
-  { unique: true, partialFilterExpression: { isActive: true } }
+  { student: 1, course: 1 },
+  {
+    unique: true,
+    name: "unique_active_course_enrollment",
+    partialFilterExpression: {
+      isActive: true,
+      status: { $in: ["pending", "approved"] }
+    }
+  }
 );
-
 // Virtual for formatted enrollment date
 enrollmentSchema.virtual('formattedEnrollmentDate').get(function() {
   return this.enrollmentDate.toLocaleDateString();
@@ -106,5 +117,6 @@ enrollmentSchema.query.active = function() {
 enrollmentSchema.statics.findByStatus = function(status) {
   return this.find({ status }).populate('student course');
 };
+
 
 module.exports = mongoose.model('Enrollment', enrollmentSchema);

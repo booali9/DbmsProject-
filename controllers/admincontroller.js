@@ -864,26 +864,26 @@ const getAllStudentMarks = async (req, res) => {
 };
 
 const getAllPendingEnrollments = async (req, res) => {
-  try {
+  try {   
     // Get all enrollments that are not yet approved
-    const enrollments = await Enrollment.find({ isApproved: false })
+    const enrollments = await Enrollment.find({isApproved: false })
       .populate('student', 'name email department semester')
       .populate('course', 'courseName semester department')
-      .populate('department', 'departmentName')
-      .sort({ enrollmentDate: -1 });
+      .populate('department', 'departmentName')  
+      .sort({ enrollmentDate: -1 });  
 
-    // Group by course for admin view
+    // Group by course for admin view  
     const groupedEnrollments = enrollments.reduce((acc, enrollment) => {
       const courseId = enrollment.course._id.toString();
       if (!acc[courseId]) {
-        acc[courseId] = {
+        acc[courseId] = {   
           courseId: enrollment.course._id,
           courseName: enrollment.course.courseName,
           semester: enrollment.course.semester,
-          department: enrollment.department.departmentName,
+          department: enrollment.department.departmentName,  
           pendingStudents: []
         };
-      }
+      }   
       
       acc[courseId].pendingStudents.push({
         enrollmentId: enrollment._id,

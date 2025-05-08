@@ -66,126 +66,140 @@ const enrollStudentInCourse = async (req, res) => {
 
 // Student enrolls in courses
 const enrollInCourses = async (req, res) => {
-  const { courseIds } = req.body;
-  const studentId = req.user.id;
-
-  try {
-      // Get student info
-      const student = await User.findById(studentId);
-      if (!student) {
-          return res.status(404).json({ message: 'Student not found' });
-      }
-
-      // Convert department to ObjectId if it's a string
-      let departmentId = student.department;
-      if (typeof student.department === 'string') {
-          const department = await Department.findOne({ 
-              departmentName: student.department 
-          });
-          if (!department) {
-              return res.status(400).json({ 
-                  message: 'Invalid department reference',
-                  department: student.department
-              });
-          }
-          departmentId = department._id;
-      }
-
-      // Check if enrollment period is open
-      const enrollmentPeriod = await EnrollmentPeriod.findOne({ 
-          department: departmentId, // Use the converted ObjectId
-          isOpen: true,
-          endDate: { $gt: new Date() } // Also check date is still valid
-      });
-      
-      if (!enrollmentPeriod) {
-          return res.status(400).json({ 
-              message: 'No active enrollment period for your department' 
-          });
-      }
-
-      // Check number of courses
-      if (courseIds.length > enrollmentPeriod.maxCourses) {
-          return res.status(400).json({ 
-              message: `You cannot enroll in more than ${enrollmentPeriod.maxCourses} courses`
-          });
+    const session = await mongoose.startSession();
+    session.startTransaction();
+  
+    try {
+      const { courseIds } = req.body;
+      const studentId = req.user.id;
+  
+      // 1. Validate input
+      if (!Array.isArray(courseIds)) {
+        await session.abortTransaction();
+        return res.status(400).json({ message: 'Invalid course selection' });
       }
   
-      // Get failed courses and current semester courses in parallel
-      const [failedCourses, currentSemesterCourses] = await Promise.all([
-          Marks.find({
-              student: studentId,
-              marksObtained: { $lt: 50 }
-          }).populate('course'),
-          Course.find({
-              department: departmentId, // Use the converted ObjectId
-              semester: student.semester
-          })
-      ]);
-
-      // Combine current semester courses with failed courses
-      const availableCourses = [...currentSemesterCourses];
-      failedCourses.forEach(failed => {
-          if (failed.course && !availableCourses.some(c => c._id.equals(failed.course._id))) {
-              availableCourses.push(failed.course);
-          }
-      });
-
-      // Validate each course
+      // 2. Get student with department
+      const student = await User.findById(studentId).session(session);
+      if (!student) {
+        await session.abortTransaction();
+        return res.status(404).json({ message: 'Student not found' });
+      }
+  
+      // 3. Get department (handle both ObjectId and string)
+      let department = student.department;
+      if (typeof student.department === 'string') {
+        department = await Department.findOne({ 
+          departmentName: student.department 
+        }).session(session);
+        if (!department) {
+          await session.abortTransaction();
+          return res.status(400).json({ message: 'Invalid department' });
+        }
+      }
+  
+      // 4. Check enrollment period
+      const enrollmentPeriod = await EnrollmentPeriod.findOne({
+        department: department._id,
+        isOpen: true,
+        endDate: { $gt: new Date() }
+      }).session(session);
+  
+      if (!enrollmentPeriod) {
+        await session.abortTransaction();
+        return res.status(400).json({ message: 'No active enrollment period' });
+      }
+  
+      // 5. Get available semester 1 courses
+      const availableCourses = await Course.find({
+        department: department._id,
+        semester: 1
+      }).session(session);
+  
+      // 6. Process each course enrollment
       const enrollments = [];
       for (const courseId of courseIds) {
-          const course = availableCourses.find(c => c._id.equals(courseId));
-          if (!course) {
-              return res.status(400).json({ 
-                  message: `Course ${courseId} is not available for enrollment` 
-              });
-          }
-
-          // Check if already enrolled
-          const existingEnrollment = await Enrollment.findOne({
-              student: studentId,
-              course: courseId,
-              isOpen: true
+        // Validate course ID
+        if (!mongoose.Types.ObjectId.isValid(courseId)) {
+          await session.abortTransaction();
+          return res.status(400).json({ message: `Invalid course ID` });
+        }
+  
+        // Find available course
+        const course = availableCourses.find(c => c._id.equals(courseId));
+        if (!course) {
+          await session.abortTransaction();
+          return res.status(400).json({ message: 'Course not available' });
+        }
+  
+        // Check for existing enrollment (VERY IMPORTANT)
+        const existing = await Enrollment.findOne({
+          student: studentId,
+          course: courseId,
+          isActive: true,
+          status: { $in: ["pending", "approved"] }
+        }).session(session);
+  
+        if (existing) {
+          await session.abortTransaction();
+          return res.status(400).json({ 
+            message: `Already enrolled in ${course.courseName}`,
+            existingCourse: existing.course 
           });
-          
-          if (existingEnrollment) {
-              return res.status(400).json({ 
-                  message: `You are already enrolled in course ${course.courseName}` 
-              });
-          }
-
-          // Create enrollment
-          const newEnrollment = new Enrollment({
-              student: studentId,
-              course: courseId,
-              semester: course.semester,
-              department: departmentId, // Use the converted ObjectId
-              enrollmentDate: new Date(),
-              isApproved: false,
-              isOpen: true
-          });
-
-          await newEnrollment.save();
-          enrollments.push(newEnrollment);
+        }
+  
+        // Create new enrollment
+        const newEnrollment = new Enrollment({
+          student: studentId,
+          course: courseId,
+          semester: 1,
+          department: department._id,
+          enrollmentPeriod: enrollmentPeriod._id,
+          status: 'pending',
+          isActive: true
+        });
+  
+        await newEnrollment.save({ session });
+        enrollments.push(newEnrollment);
       }
-
+  
+      await session.commitTransaction();
       res.status(201).json({ 
-          message: 'Enrollment successful', 
-          enrollments,
-          failedCourses: failedCourses.map(f => f.course?.courseName).filter(Boolean)
+        success: true,
+        message: 'Enrolled successfully',
+        enrollments 
       });
-  } catch (error) {
-      console.error('Error enrolling in courses:', error);
-      res.status(500).json({ 
-          message: 'Server error', 
-          error: error.message,
-          ...(process.env.NODE_ENV === 'development' && {
-              stack: error.stack
-          })
+  
+    } catch (error) {
+      await session.abortTransaction();
+      
+      // Enhanced duplicate key error handling
+      if (error.code === 11000) {
+        // Find the actual conflicting enrollment
+        const conflict = await Enrollment.findOne({
+          student: req.user.id,
+          isActive: true,
+          status: { $in: ["pending", "approved"] }
+        });
+        
+        return res.status(409).json({
+          message: 'Duplicate enrollment detected',
+          conflictingCourse: conflict?.course,
+          attemptedCourses: req.body.courseIds,
+          solution: conflict ? 
+            `You're already enrolled in course ${conflict.course}` : 
+            'Unknown conflict - please check your enrollments'
+        });
+      }
+  
+      res.status(500).json({
+        message: 'Enrollment failed',
+        error: error.message
       });
-  }
-};
- 
+    } finally {
+      session.endSession();
+    }
+  };
 
 const getCoursesForStudent = async (req, res) => {
   try {
